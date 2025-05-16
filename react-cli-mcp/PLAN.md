@@ -89,18 +89,19 @@ The `react-cli-mcp` system will consist of the following main components:
 
 ## 6. Key Technologies & Tools
 
-- **Language**: Python (for the main tool logic and server).
-- **Web Interaction (if needed)**:
-  - `Playwright` or `Selenium` for headless browser interaction with the React app. This seems likely necessary to reliably trigger events and observe state changes in the actual rendered DOM.
-- **Parsing (DOM)**: Standard DOM parsing libraries (e.g., `BeautifulSoup` if interacting with static HTML dumps, or direct DOM APIs via Playwright/Selenium).
-- **Server Framework (Optional)**: FastAPI or Flask if `react-cli-mcp` runs as a persistent server.
+- **Language**: Node.js (TypeScript highly recommended for type safety and better development experience).
+- **Web Interaction**: `Playwright` (has excellent Node.js API) for headless browser interaction with the React app.
+- **Parsing (DOM)**: Direct DOM APIs via Playwright.
+- **Parsing (AST - Future)**: Libraries like `@babel/parser`, `esprima`, or the TypeScript compiler API if we proceed with AST analysis.
+- **Package Manager**: npm or yarn.
+- **Server Framework (Optional, if react-cli-mcp runs as a persistent server)**: Express.js, Fastify, or similar Node.js frameworks.
 
 ## 7. Development Phases & Roadmap
 
 - **Phase 3.1: Basic Parser & CLI for Todo App (Proof of Concept)**
 
-  - **Task 3.1.1**: Setup project structure for `react-cli-mcp` (Python, virtual env, dependencies like Playwright).
-  - **Task 3.1.2**: Implement a simple parser that uses Playwright to launch the frontend app, find elements with `data-interactive-element`.
+  - **Task 3.1.1**: Setup project structure for `react-cli-mcp` (Node.js with TypeScript, npm/yarn, add Playwright dependency).
+  - **Task 3.1.2**: Implement a simple parser that uses Playwright to launch the frontend app, find elements with `data-interactive-element` and `data-display-*` attributes.
   - **Task 3.1.3**: Implement functions to interact with these elements (click, type, get value/state).
   - **Task 3.1.4**: Create a basic CLI interpreter (not MCP yet) that can take simple commands (e.g., `add_todo "Buy groceries"`, `list_todos`) and execute them using the parser/interaction functions.
   - **Task 3.1.5**: Test thoroughly with the Todo app.
@@ -142,3 +143,27 @@ The `react-cli-mcp` system will consist of the following main components:
 ---
 
 This plan provides a starting point. We can refine and add details as we progress.
+
+---
+
+## Progress Update (As of end of session)
+
+**Last Completed Task (from Phase 3.1):**
+
+- **Task 3.1.1**: Setup project structure for `react-cli-mcp` (Node.js with TypeScript, npm/yarn, add Playwright dependency).
+  - Initialized Node.js project with `package.json`.
+  - Installed TypeScript, `@types/node`, and `playwright`.
+  - Created `tsconfig.json`.
+  - Installed Playwright browser binaries.
+  - Created `src/main.ts` and basic directory structure.
+  - Added `build`, `start`, and `dev` scripts to `package.json`.
+  - Created `.gitignore`.
+
+**Next Task to Implement:**
+
+- **Task 3.1.2**: Implement a simple parser in `src/main.ts` that uses Playwright to:
+  1.  Launch a browser (Chromium by default).
+  2.  Navigate to the frontend application (e.g., `http://localhost:5173`).
+  3.  Find all elements with the `data-interactive-element` attribute.
+  4.  Find all elements with `data-display-container` and `data-display-item-text` attributes.
+  5.  For now, log basic information about these elements (e.g., tag name, attributes, text content) to the console.
