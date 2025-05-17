@@ -126,6 +126,15 @@ export class PlaywrightController {
     elementLocator: Locator
   ): Promise<string> {
     if (!this.page) throw new Error("Page not initialized");
+
+    const explicitType = await this.getAttribute(
+      elementLocator,
+      DataAttributes.ELEMENT_TYPE
+    );
+    if (explicitType && explicitType.trim()) {
+      return explicitType.trim().toLowerCase();
+    }
+
     const tagName = (
       await elementLocator.evaluate((el) => (el as Element).tagName)
     ).toLowerCase();
@@ -204,6 +213,12 @@ export class PlaywrightController {
       let isDisabled: boolean | undefined = undefined;
       let isReadOnly: boolean | undefined = undefined;
 
+      // Prioritize data-mcp-value
+      currentValue = await this.getAttribute(
+        elementLocator,
+        DataAttributes.VALUE
+      );
+
       const mcpDisabled = await this.getAttribute(
         elementLocator,
         DataAttributes.DISABLED_STATE
@@ -226,7 +241,8 @@ export class PlaywrightController {
         }
       }
 
-      if (elementType.startsWith("input-")) {
+      // Fallback to inputValue if data-mcp-value was not found
+      if (currentValue === undefined && elementType.startsWith("input-")) {
         if (elementType === "input-checkbox" || elementType === "input-radio") {
           isChecked = await elementLocator.isChecked();
         } else if (
@@ -265,6 +281,10 @@ export class PlaywrightController {
         elementLocator,
         DataAttributes.NAVIGATES_TO
       );
+      const customState = await this.getAttribute(
+        elementLocator,
+        DataAttributes.ELEMENT_STATE
+      );
 
       const state: Partial<InteractiveElementInfo> = {
         id: elementId,
@@ -282,6 +302,7 @@ export class PlaywrightController {
       if (updatesContainer !== undefined)
         state.updatesContainer = updatesContainer;
       if (navigatesTo !== undefined) state.navigatesTo = navigatesTo;
+      if (customState !== undefined) state.customState = customState;
 
       console.log(`State for element ${elementId}:`, state);
       return state;

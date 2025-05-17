@@ -14,6 +14,7 @@ export interface InteractiveElementInfo {
   controls?: string; // From data-mcp-controls (ID of element it controls)
   updatesContainer?: string; // From data-mcp-updates-container (ID of container it updates)
   navigatesTo?: string; // From data-mcp-navigates-to (URL or view identifier)
+  customState?: string; // From data-mcp-element-state
   // We can add more properties like attributes, etc. later
 }
 

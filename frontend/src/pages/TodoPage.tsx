@@ -2,6 +2,7 @@ import React from "react";
 import { useGetTodos } from "../hooks/useTodos";
 import TodoForm from "../components/TodoForm";
 import TodoList from "../components/TodoList";
+import AttributeTest from "../components/AttributeTest";
 
 const TodoPage: React.FC = () => {
   const { data: todos, isLoading, isError, error } = useGetTodos();
@@ -36,6 +37,13 @@ const TodoPage: React.FC = () => {
       )}
 
       {!isLoading && !isError && <TodoList todos={todos} />}
+
+      <div
+        data-mcp-region="mcp-attribute-test-section"
+        className="mt-12 pt-8 border-t border-slate-300 dark:border-slate-700"
+      >
+        <AttributeTest />
+      </div>
     </div>
   );
 };

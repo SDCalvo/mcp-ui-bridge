@@ -21,6 +21,14 @@ export class DomParser {
   }
 
   private async getElementType(element: ElementHandle): Promise<string> {
+    const explicitType = await this.getElementAttribute(
+      element,
+      DataAttributes.ELEMENT_TYPE
+    );
+    if (explicitType && explicitType.trim()) {
+      return explicitType.trim().toLowerCase();
+    }
+
     const tagName = (
       await element.evaluate((el) => (el as Element).tagName)
     ).toLowerCase();
@@ -94,6 +102,7 @@ export class DomParser {
         continue;
       }
 
+      // Get type using the updated getElementType method which prioritizes data-mcp-element-type
       const elementType = await this.getElementType(elementHandle);
       const label = await this.getElementLabel(elementHandle, elementId);
 
@@ -101,6 +110,12 @@ export class DomParser {
       let isChecked: boolean | undefined = undefined;
       let isDisabled: boolean | undefined = undefined;
       let isReadOnly: boolean | undefined = undefined;
+
+      // Prioritize data-mcp-value
+      currentValue = await this.getElementAttribute(
+        elementHandle,
+        DataAttributes.VALUE
+      );
 
       const mcpDisabled = await this.getElementAttribute(
         elementHandle,
@@ -125,7 +140,8 @@ export class DomParser {
         }
       }
 
-      if (elementType.startsWith("input-")) {
+      // Fallback to inputValue if data-mcp-value was not found
+      if (currentValue === undefined && elementType.startsWith("input-")) {
         if (elementType === "input-checkbox" || elementType === "input-radio") {
           isChecked = await elementHandle.isChecked();
         } else if (
@@ -165,6 +181,10 @@ export class DomParser {
         elementHandle,
         DataAttributes.NAVIGATES_TO
       );
+      const customState = await this.getElementAttribute(
+        elementHandle,
+        DataAttributes.ELEMENT_STATE
+      );
 
       const elementInfo: InteractiveElementInfo = {
         id: elementId,
@@ -182,6 +202,7 @@ export class DomParser {
       if (updatesContainer !== undefined)
         elementInfo.updatesContainer = updatesContainer;
       if (navigatesTo !== undefined) elementInfo.navigatesTo = navigatesTo;
+      if (customState !== undefined) elementInfo.customState = customState;
 
       let logMessage = `  - ID: ${elementId}, Type: ${elementType}, Label: "${label}"`;
       if (elementInfo.purpose)
@@ -198,6 +219,8 @@ export class DomParser {
         logMessage += `, Updates: "${elementInfo.updatesContainer}"`;
       if (elementInfo.navigatesTo)
         logMessage += `, NavigatesTo: "${elementInfo.navigatesTo}"`;
+      if (elementInfo.customState)
+        logMessage += `, State: "${elementInfo.customState}"`;
       console.log(logMessage);
 
       foundElements.push(elementInfo);
