@@ -29,30 +29,41 @@ The `react-cli-mcp` system will consist of the following main components:
 - **React App Parser**:
   - Responsible for analyzing the structure and interactive elements of the target React application.
   - Needs to identify elements marked with `data-interactive-element` (for interactive components) and attributes like `data-display-container` or `data-display-item-text` (for data display areas). It should extract relevant information (type, current state, associated actions, displayed text/data).
-- **CLI Generation & Interaction Module**:
-  - Translates the parsed React app structure into a set of CLI commands or an interactive session.
-  - Manages the state of the CLI interaction.
-  - Executes actions on the React app based on CLI commands.
+- **CLI Generation & Interaction Module / MCP Agent Core**:
+  - This module is the heart of `react-cli-mcp`. It dynamically understands the current state of the React application via the React App Parser.
+  - It doesn't generate a static CLI representation, but rather enables interaction through a few generic, stable MCP tools.
+  - Manages the state of the interaction with the MCP-User (LLM), including understanding the current "view" or context within the React application.
+  - Executes actions on the React app using Playwright, based on commands received via MCP.
 - **MCP Integration Layer**:
-  - Formats messages (requests from LLM, responses from the tool) according to the Model Context Protocol.
+  - Exposes a stable set of generic MCP tools (e.g., `get_current_screen_actions`, `get_current_screen_data`, `send_command`).
+  - Formats messages (requests from MCP-User, responses from the tool) according to the Model Context Protocol.
   - Handles the lifecycle of an MCP interaction.
 - **Server/Runtime Environment**:
   - Hosts the `react-cli-mcp` tool.
-  - Potentially runs a headless browser or similar environment to interact with the React application if direct DOM manipulation/event simulation is needed.
+  - Runs a headless browser (Playwright) to interact with the React application.
 
-**High-Level Flow:**
+**High-Level Flow (Revised):**
 
-1.  LLM sends an MCP request (e.g., "list todos", "add todo 'Buy milk'").
-2.  MCP Integration Layer receives and decodes the request.
-3.  CLI Interaction Module translates the request into an action for the React app.
-4.  React App Parser provides context/selectors for the action.
-5.  Action is performed on the React App (e.g., simulating a button click, typing into an input). This might involve:
-    - Directly manipulating a live React app (if running in a shared context).
-    - Interacting with a headless browser instance running the React app.
-6.  Result/updated state from the React app is observed.
-7.  CLI Interaction Module formats the result.
-8.  MCP Integration Layer encodes the result into an MCP response.
-9.  Response is sent back to the LLM.
+1.  **Initialization**: `react-cli-mcp` starts, launches Playwright, navigates to the target React app, and performs an initial scan to understand the current UI.
+2.  **MCP-User (LLM) Discovers Capabilities**:
+    - MCP-User connects to the `react-cli-mcp` MCP server.
+    - MCP-User calls a discovery mechanism (e.g., a standard MCP discovery endpoint or a specific tool like `get_server_capabilities`) to learn about the stable, generic tools (`get_current_screen_actions`, `get_current_screen_data`, `send_command`).
+3.  **MCP-User Assesses Current Screen**:
+    - MCP-User calls `get_current_screen_actions`. `react-cli-mcp` (via React App Parser) provides a dynamic list of possible actions (e.g., elements that can be clicked, inputs that can be filled) based on the currently visible UI in the React app. This response includes identifiers for elements and templates for commands.
+    - MCP-User calls `get_current_screen_data`. `react-cli-mcp` provides a structured representation of the data currently displayed in elements marked for data display.
+4.  **MCP-User Decides and Sends Command**:
+    - Based on its goals and the information from `get_current_screen_actions` and `get_current_screen_data`, the MCP-User decides on an action.
+    - MCP-User calls the `send_command` tool, providing parameters like the target element's identifier (obtained from `get_current_screen_actions`) and the specific action to perform (e.g., "click", or "type 'text'").
+5.  **`react-cli-mcp` Executes Action**:
+    - The MCP Integration Layer receives the `send_command` request.
+    - The MCP Agent Core translates this into a Playwright action on the live React App (e.g., `page.locator('[data-interactive-element="some_id"]').click()`).
+6.  **`react-cli-mcp` Observes Result & Updates State**:
+    - The React app responds to the action (e.g., UI updates, data changes, navigation occurs).
+    - `react-cli-mcp` (via Playwright and the React App Parser) observes these changes. If navigation occurs, it re-scans the new page view.
+7.  **`react-cli-mcp` Responds to MCP-User**:
+    - The MCP Integration Layer encodes the result (e.g., "Action successful", "Error: element not found", "Navigation to /new-page occurred") into an MCP response for the `send_command` call.
+    - The response may also include a snapshot of critical updated data or suggest that the MCP-User call `get_current_screen_actions` / `get_current_screen_data` again to get a full picture of the new state.
+8.  **Loop**: The MCP-User continues interacting by calling `get_current_screen_actions`/`get_current_screen_data` and `send_command` as needed.
 
 ## 3. React App Parser Details
 
@@ -65,27 +76,39 @@ The `react-cli-mcp` system will consist of the following main components:
   - **AST Parsing (Future Consideration)**: For more complex scenarios or for apps without these data attributes, AST parsing of React components could be explored. This would involve analyzing the component code itself. Initially, we will rely on the data attributes.
 - **Output**: A structured representation of the interactive elements and their current state, usable by the CLI module.
 
-## 4. CLI Generation & Interaction Module
+## 4. CLI Generation & Interaction Module / MCP Agent Core
 
-- **Interaction Model**:
-  - Could be command-based (e.g., `todo add "text"`, `todo toggle 1`, `todo list`) or more conversational.
-  - Needs to map LLM intent to specific UI interactions.
-- **Available Commands (Todo App Example)**:
-  - `list_todos`: Displays current todos (retrieved from elements marked for data display).
-  - `add_todo <content>`: Creates a new todo.
-  - `update_todo <todo_id> --completed <true|false>`: Toggles a todo's status.
-  - `delete_todo <todo_id>`: Deletes a todo.
-  - `get_element_state <element_id_or_selector>`: Gets the state of a specific element (could be interactive or display).
-  - `input_text <element_id_or_selector> <text>`: Enters text into an input field.
-  - `click_element <element_id_or_selector>`: Simulates a click on an element.
-- **State Management**: The module needs to keep track of the "current view" or context of the interaction, including readily available displayed data.
+- **Interaction Model (via MCP)**:
+  - The MCP-User (LLM) interacts with the React application through a small, stable set of generic MCP tools.
+  - The core idea is that the `react-cli-mcp` tool dynamically discovers the capabilities of the _current view_ in the React app and presents these as _data_ to the MCP-User, rather than as a constantly changing set of MCP tools.
+- **Generic MCP Tools Exposed**:
+  - `get_current_screen_actions`:
+    - No input parameters.
+    - Returns: A structured list of currently available actions. Each action includes:
+      - An identifier for the interactive element (e.g., derived from `data-interactive-element`).
+      - The type of element (e.g., `button`, `input-text`, `link`).
+      - A human-readable label (e.g., from element text, `aria-label`).
+      - A template or structure indicating how to call `send_command` for this action.
+  - `get_current_screen_data`:
+    - No input parameters.
+    - Returns: A structured representation of the data currently visible in elements marked with `data-display-container` and `data-display-item-text`.
+  - `send_command`:
+    - Input Parameters:
+      - `target_element_id`: The identifier of the element to interact with (obtained from `get_current_screen_actions`).
+      - `action_type`: The type of interaction (e.g., `click`, `type`, `toggle`).
+      - `action_params` (optional): Additional parameters for the action (e.g., text to type for an `input-text` element).
+    - Returns: Result of the action (e.g., success, failure, navigation details).
+- **State Management**: The module needs to keep track of the current URL and potentially other high-level state of the React application to provide context. The primary source of truth for available actions and displayed data is always a fresh scan of the current Playwright page.
 
 ## 5. MCP Integration Layer
 
 - **Message Structure**:
-  - Define clear MCP message types for requests (e.g., `ExecuteCommand`, `GetUIState`) and responses (`CommandResult`, `UIStateSnapshot`, `Error`).
-  - Payloads will contain command details, arguments, and results.
-- **Context Management**: How context (e.g., available commands, current UI state) is passed to the LLM.
+  - Define clear MCP message schemas for requests and responses for the generic tools:
+    - `get_current_screen_actions` (request/response)
+    - `get_current_screen_data` (request/response)
+    - `send_command` (request/response)
+  - Payloads will contain necessary parameters (e.g., for `send_command`: target element ID, action type, action parameters) and results (e.g., for `get_current_screen_actions`: list of actions; for `send_command`: success/failure, navigation details).
+- **Context Management**: The MCP-User (LLM) primarily manages its own context by calling `get_current_screen_actions` and `get_current_screen_data` to understand the current state and possibilities of the React application. The server provides this information on demand.
 
 ## 6. Key Technologies & Tools
 
@@ -139,6 +162,11 @@ The `react-cli-mcp` system will consist of the following main components:
 - How will `react-cli-mcp` be invoked? As a standalone server, or a library integrated into another system?
 - How will the target React application URL be provided to `react-cli-mcp`?
 - Security implications of allowing an LLM to interact with web applications.
+- **State Synchronization**: Ensuring the MCP-User's understanding of the UI state matches the actual UI state. This is primarily addressed by the `get_current_screen_data` and `get_current_screen_actions` tools providing fresh information from the live application on each call. The onus is on the MCP-User to call these tools to refresh its understanding as needed, especially after actions that might change the UI.
+- **Dynamic Content**: Handling dynamically loaded content or components that appear/disappear. The dynamic nature of `get_current_screen_actions` and `get_current_screen_data` (by re-scanning the live DOM via Playwright) is designed to handle this.
+- **Mapping MCP-User Intent to Generic Commands**: The MCP-User needs to effectively use the output of `get_current_screen_actions` (which describes available operations) to correctly formulate the parameters for the `send_command` tool. This involves understanding the semantic meaning of the labels and identifiers provided.
+- **Performance**: Headless browser interaction and frequent DOM scanning (especially for `get_current_screen_actions` and `get_current_screen_data`) can be resource-intensive and potentially slow. Optimizations might be needed (e.g., partial scans, caching if safe).
+- **Defining Element Identifiers**: Ensuring that the identifiers derived (e.g., from `data-interactive-element`) are unique and stable enough across minor UI re-renders is important for the `send_command` tool to reliably target elements.
 
 ---
 
@@ -161,9 +189,30 @@ This plan provides a starting point. We can refine and add details as we progres
 
 **Next Task to Implement:**
 
-- **Task 3.1.2**: Implement a simple parser in `src/main.ts` that uses Playwright to:
-  1.  Launch a browser (Chromium by default).
-  2.  Navigate to the frontend application (e.g., `http://localhost:5173`).
-  3.  Find all elements with the `data-interactive-element` attribute.
-  4.  Find all elements with `data-display-container` and `data-display-item-text` attributes.
-  5.  For now, log basic information about these elements (e.g., tag name, attributes, text content) to the console.
+- **Task 3.1.2**: Implement a simple parser in `src/main.ts` that uses Playwright to launch the frontend app, find elements with `data-interactive-element` attributes, and also find elements with `data-display-container` and `data-display-item-text` attributes. This forms the basis of the `React App Parser` component and is crucial for both `get_current_screen_actions` and `get_current_screen_data`.
+
+  - **Task 3.1.3**: Implement functions in `src/main.ts` (or modules it uses) to programmatically interact with these identified elements (e.g., simulate click, type text, get current value/state, check visibility). These functions will be the core logic used by the `send_command` MCP tool.
+  - **Task 3.1.4**: Create a basic command-line testing interface (not the final MCP server yet, but could be a simple Node.js script that uses `inquirer` or similar). This interface will allow manual testing of the generic command concepts:
+    - A command to simulate `get_current_screen_actions` (should log the identified actions from the current page).
+    - A command to simulate `get_current_screen_data` (should log the identified display data).
+    - A command to simulate `send_command` (taking an element ID and action, then using the functions from 3.1.3 to execute it).
+  - **Task 3.1.5**: Test these functions and the test interface thoroughly with the Todo app, including actions that cause UI updates and simple navigation if possible.
+
+- **Phase 3.2: MCP Integration**
+
+  - **Task 3.2.1**: Define MCP message schemas for requests and responses.
+  - **Task 3.2.2**: Implement the MCP integration layer to wrap the CLI functionality.
+  - **Task 3.2.3**: Set up a simple way to send MCP messages to the tool and receive responses (e.g., a basic client script).
+
+- **Phase 3.3: Refinement & Generalization**
+
+  - **Task 3.3.1**: Improve error handling and reporting.
+  - **Task 3.3.2**: Enhance parser to extract more context (e.g., labels, surrounding text).
+  - **Task 3.3.3**: Explore strategies for handling more complex UI structures or multi-step operations.
+  - **Task 3.3.4**: Documentation.
+
+- **Future Phases (Beyond initial scope)**:
+  - Support for navigation between different views/pages.
+  - More advanced state tracking.
+  - AST-based parsing as an alternative or complement.
+  - Support for other UI elements (selects, radio buttons, etc.).
