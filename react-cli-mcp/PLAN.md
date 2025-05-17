@@ -170,8 +170,8 @@ The `DomParser` currently:
   - [ ] **Task 3.2.1**: Enhance `DomParser` and `PlaywrightController`
     - [ ] More sophisticated error handling and logging in parser and controller methods.
     - [ ] Handle edge cases (e.g., missing attributes, elements appearing/disappearing during parsing).
-    - [ ] Implement parsing for any remaining `data-mcp-*` attributes if not fully covered (e.g. `data-mcp-value` if distinct from input.value).
-    - [ ] Consider if `data-mcp-element-state` needs specific handling beyond disabled/readonly/checked.
+    - [x] Implement parsing for/ensure full coverage of defined `data-mcp-*` attributes (element-type, element-state, value).
+    - [ ] Consider if `data-mcp-element-state` needs specific handling beyond disabled/readonly/checked (Covered by customState implementation).
   - [ ] **Task 3.2.2**: CLI Enhancements
     - [ ] Improve output formatting (e.g., clearer tables, more structured JSON output option).
     - [ ] Add configuration options (headless mode toggle, target URL via arg/env).
@@ -191,6 +191,66 @@ The `DomParser` currently:
     - [ ] Map `send_command` requests to `PlaywrightController` actions.
   - [ ] **Task 3.3.3**: MCP Test Client
     - [ ] Create a simple script or use an MCP client tool to send test messages to the `react-cli-mcp` server.
+
+- **Phase 3.4: Package as a Turnkey MCP Server/Tool**
+
+  - **Goal**: Package the `react-cli-mcp` system into an easy-to-use tool. Developers can install and run this tool against their React application, which will automatically start the DOM parser, the MCP server (for LLM interaction), and optionally the interactive CLI (for debugging/direct use).
+
+  - [ ] **Task 3.4.1**: Create Configurable Entry Points & Core Abstraction
+
+    - [ ] Define clear entry points for starting the system (e.g., a primary CLI command like `npx react-cli-mcp connect --url <app-url>` and/or a simple programmatic function like `runMcpServer({targetUrl: '<app-url>'})`).
+    - [ ] Abstract the core application logic (Playwright launching, DOM parsing, MCP server startup, CLI loop) into a primary class or module that can be invoked by these entry points.
+    - [ ] Implement configuration options (e.g., target URL, headless mode, MCP server port, enable/disable interactive CLI mode) passable via CLI arguments or function parameters.
+    - [ ] Ensure the MCP server component can be started and run independently of the interactive `inquirer`-based CLI prompt, allowing for server-only operation.
+
+  - [ ] **Task 3.4.2**: Configure `package.json` for Distribution
+
+    - [ ] Set `bin` field for CLI command(s).
+    - [ ] Set `main`, `module`, and `types` fields to point to appropriate library entry points if a programmatic API is also offered.
+    - [ ] Define `files` to include necessary distributable files (compiled JS, type definitions).
+    - [ ] Add relevant metadata (keywords, author, license, repository URL, description).
+
+  - [ ] **Task 3.4.3**: Build Process for Distributable Tool
+
+    - [ ] Ensure `tsc` build process in `tsconfig.json` and `package.json` scripts correctly compiles the project for distribution, including generating necessary declaration files.
+    - [ ] Verify the build output works as expected when installed/run in a different project.
+
+  - [ ] **Task 3.4.4**: Tool Usage Documentation
+
+    - [ ] Update `README.md` with clear instructions on how to install and run the `react-cli-mcp` tool against a React application.
+    - [ ] Document all CLI commands, options, and any programmatic API if offered.
+    - [ ] Provide examples of how to connect an MCP client to the server started by the tool.
+    - [ ] Add TSDoc comments to any programmatically exposed functions/classes for auto-generated API documentation (e.g., using TypeDoc) if applicable.
+
+  - [ ] **Task 3.4.5**: (Optional) Publish to npm
+    - [ ] If intended for public use, prepare for and publish the package to the npm registry.
+    - [ ] Set up npm scripts for versioning and publishing.
+
+- **Phase 3.5: Deployment & Production Considerations**
+
+  - **Goal**: Ensure `react-cli-mcp` can be reliably and securely used with deployed web applications, addressing challenges like authentication, network conditions, and headless operation.
+
+  - [ ] **Task 3.5.1**: Strategy for Authentication/Authorization
+    - [ ] Research and define mechanisms for `react-cli-mcp` to handle application logins (e.g., enabling LLM-driven login via `data-mcp-*` annotated forms).
+    - [ ] Document security best practices for handling credentials.
+    - [ ] Consider flows where the application might already have an active session if `react-cli-mcp` attaches to an existing authenticated browser context (advanced).
+  - [ ] **Task 3.5.2**: Robustness for Deployed Environments
+    - [ ] Implement configurable timeouts and retry mechanisms for Playwright actions to handle network latency.
+    - [ ] Enhance error reporting for network issues, unexpected application states, or element-not-found scenarios common in dynamic deployed apps.
+    - [ ] Thoroughly test and ensure stability of all core functionalities in headless browser mode.
+  - [ ] **Task 3.5.3**: Session Management & State Persistence
+    - [ ] Investigate strategies for handling long-lived interactions and potential session expiry/re-authentication.
+    - [ ] Explore if/how `react-cli-mcp` might need to persist or restore interaction state across tool restarts when targeting a deployed app (e.g., current URL, basic context).
+  - [ ] **Task 3.5.4**: Configuration for Deployed Targets
+    - [ ] Ensure CLI options or configuration files robustly handle various deployment URLs (HTTPS, ports, paths).
+    - [ ] Consider parameters for proxies or specific browser launch arguments needed for certain deployed environments.
+  - [ ] **Task 3.5.5**: Security Audit and Hardening
+    - [ ] Review potential security vulnerabilities (e.g., command injection if not careful with how LLM inputs are translated to actions, unintended data exposure).
+    - [ ] Implement safeguards or clear warnings related to interacting with sensitive data or critical functionalities in a deployed app.
+    - [ ] Document secure operational practices for users.
+  - [ ] **Task 3.5.6**: Documentation for Production/Deployed Use Cases
+    - [ ] Create comprehensive documentation detailing how to set up and use `react-cli-mcp` against production or staging environments.
+    - [ ] Include examples and best practices for authentication, handling dynamic content, and troubleshooting common issues in deployed settings.
 
 - **Future Phases (Beyond initial scope)**:
   - Support for complex navigation and state tracking.
@@ -224,13 +284,13 @@ The `DomParser` currently:
 **Next Tasks (Phase 3.2: Refinement & Robustness):**
 
 - **Task 3.2.1**: Enhance `DomParser` and `PlaywrightController`:
-  - Improve error handling, logging, and edge case management.
-  - Ensure full coverage of defined `data-mcp-*` attributes.
+  - [x] Ensure full coverage of defined `data-mcp-*` attributes (element-type, element-state, value successfully tested).
+  - [ ] Improve error handling, logging, and edge case management.
 - **Task 3.2.2**: CLI Enhancements:
-  - Improve output formatting.
-  - Add configuration options.
+  - [ ] Improve output formatting.
+  - [ ] Add configuration options.
 - **Task 3.2.3**: Formal Testing:
-  - Unit tests for parser logic.
-  - Integration tests for CLI.
+  - [ ] Unit tests for parser logic.
+  - [ ] Integration tests for CLI.
 
 Following this, we will proceed to **Phase 3.3: MCP Integration**.
