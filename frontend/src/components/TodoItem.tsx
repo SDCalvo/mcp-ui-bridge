@@ -38,7 +38,7 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo }) => {
           onChange={handleToggleComplete}
           disabled={updateTodoMutation.isPending}
           className="form-checkbox h-5 w-5 text-blue-600 dark:text-blue-400 rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-slate-700 transition duration-150 ease-in-out mr-3"
-          data-interactive-element="checkbox"
+          data-mcp-interactive-element={`todo-checkbox-${todo.id}`}
         />
         <span
           className={`text-lg ${
@@ -46,7 +46,7 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo }) => {
               ? "line-through text-slate-500 dark:text-slate-400"
               : "text-slate-800 dark:text-slate-100"
           }`}
-          data-display-item-text="todo-content"
+          data-mcp-display-item-text="todo-content"
         >
           {todo.content}
         </span>
@@ -55,7 +55,7 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo }) => {
         onClick={handleDelete}
         disabled={deleteTodoMutation.isPending}
         className="px-3 py-1 bg-red-500 text-white text-sm rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        data-interactive-element="button"
+        data-mcp-interactive-element={`todo-delete-button-${todo.id}`}
       >
         {deleteTodoMutation.isPending ? "..." : "Delete"}
       </button>

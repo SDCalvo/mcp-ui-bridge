@@ -42,6 +42,48 @@ The `react-cli-mcp` system will consist of the following main components:
   - Hosts the `react-cli-mcp` tool.
   - Runs a headless browser (Playwright) to interact with the React application.
 
+### 2.1. Data Attributes for MCP Interaction
+
+To establish a clear and stable contract between the target React application and the `react-cli-mcp` tool (for the mcp-user/LLM), specific `data-mcp-*` attributes are used. These allow developers to explicitly mark elements for MCP interaction.
+
+**Current Core Attributes (Namespaced with `mcp-` to avoid conflicts):**
+
+- `data-mcp-interactive-element="unique-id"`: Identifies elements the mcp-user can interact with (buttons, inputs, etc.). The value serves as a stable ID for the MCP tool to target the element.
+- `data-mcp-display-container="unique-id"`: Marks a container for a list or group of related display items. The value is a unique ID for that container.
+- `data-mcp-display-item-text`: Marks an individual piece of text content within a `data-mcp-display-container`. (Currently, the value of this attribute itself isn't used, but its presence identifies the element whose text content should be extracted.)
+
+These core attributes are essential for the basic functioning of the parser and the MCP agent's ability to identify and interact with key parts of the application.
+
+**Potential Future Data Attributes & Hybrid Strategy:**
+
+As the system evolves, more descriptive information might be needed by the mcp-user. Instead of solely relying on new `data-mcp-*` attributes for every piece of information (which could lead to redundancy if standard HTML/ARIA attributes already provide it), a hybrid approach is envisioned:
+
+1.  **Explicit `data-mcp-*` Attribute (Priority):** Developers can use a specific `data-mcp-*` attribute for fine-grained control over what the mcp-user sees.
+2.  **Fallback to Standard HTML/ARIA Attributes:** If a specific descriptive `data-mcp-*` attribute is not present, the `ReactAppParser` will attempt to infer the information from common standard attributes.
+
+Potential future attributes and their possible fallbacks include:
+
+- `data-mcp-element-label="Descriptive Label"`:
+  - **Purpose**: Provides an explicit, human-readable label for an interactive element.
+  - **Fallbacks**: `aria-label`, element's `textContent` (e.g., for buttons), `placeholder` (for inputs), `title` attribute.
+- `data-mcp-element-type="button | text-input | checkbox"`:
+  - **Purpose**: Explicitly defines the type/role of an interactive element.
+  - **Fallbacks**: Element's `tagName` (e.g., `button`, `input`, `select`), `type` attribute of an input (e.g., `text`, `checkbox`), `role` attribute.
+- `data-mcp-element-state="active | expanded | selected"`:
+  - **Purpose**: Declares the current state of an interactive element if not obvious from standard attributes.
+  - **Fallbacks**: Standard HTML attributes like `disabled`, `checked`, `selected`; ARIA attributes like `aria-checked`, `aria-expanded`, `aria-selected`.
+- `data-mcp-navigates-to="view-id | logical-name"`:
+  - **Purpose**: For elements triggering navigation, indicates the destination.
+  - **Fallbacks**: Potentially `href` for `<a>` tags, though mapping this to a logical view ID might still require some convention.
+- `data-mcp-value="current-value"`:
+  - **Purpose**: For custom controls where the value isn't in standard `value` or `textContent`.
+  - **Fallbacks**: Standard `value` attribute, `textContent`.
+- `data-mcp-display-item-id="unique-item-id"`:
+  - **Purpose**: Provides a stable, unique ID for an item within a `data-mcp-display-container`, especially if `textContent` isn't unique or if actions target specific items.
+  - **Fallbacks**: None directly; this would likely always need to be explicit if required.
+
+This hybrid strategy aims to balance explicit control for developers with the convenience of leveraging existing, standard attributes, reducing annotation burden while ensuring the mcp-user gets rich context.
+
 **High-Level Flow (Revised):**
 
 1.  **Initialization**: `react-cli-mcp` starts, launches Playwright, navigates to the target React app, and performs an initial scan to understand the current UI.
