@@ -2,9 +2,12 @@
 export {};
 
 export interface InteractiveElementInfo {
-  id: string; // Value of data-interactive-element
-  tagName: string;
-  // We can add more properties like textContent, attributes, etc. later
+  id: string; // Value of data-mcp-interactive-element
+  elementType: string; // e.g., 'button', 'input-text', 'input-checkbox'
+  label: string; // Best available label (aria-label, textContent, placeholder, or id)
+  currentValue?: string; // For input fields
+  isChecked?: boolean; // For checkboxes
+  // We can add more properties like attributes, etc. later
 }
 
 export interface DisplayItem {
