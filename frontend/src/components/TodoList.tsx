@@ -16,7 +16,12 @@ const TodoList: React.FC<TodoListProps> = ({ todos }) => {
   }
 
   return (
-    <ul className="space-y-3" data-mcp-display-container="todo-list">
+    <ul
+      className="space-y-3"
+      data-mcp-display-container="todo-list"
+      data-mcp-region="active-todos"
+      data-mcp-purpose="display-todo-items"
+    >
       {todos.map((todo) => (
         <TodoItem key={todo.id} todo={todo} />
       ))}

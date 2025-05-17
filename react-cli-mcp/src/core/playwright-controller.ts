@@ -19,7 +19,24 @@ export class PlaywrightController {
     this.browser = await chromium.launch(this.launchOptions);
     this.context = await this.browser.newContext();
     this.page = await this.context.newPage();
+
+    // Add a listener for the 'close' event on the page
+    this.page.on("close", () => {
+      console.error(
+        "Playwright page event: 'close' fired. The page has been closed."
+      );
+    });
+
     console.log("Browser launched and page created.");
+  }
+
+  // Helper to get attribute and convert null to undefined
+  private async getAttribute(
+    locator: Locator,
+    attributeName: string
+  ): Promise<string | undefined> {
+    const value = await locator.getAttribute(attributeName);
+    return value === null ? undefined : value;
   }
 
   async navigate(
@@ -105,46 +122,56 @@ export class PlaywrightController {
   }
 
   // --- Helper methods for element state retrieval (similar to DomParser, but for single elements) ---
-  private async getElementTypeById(elementId: string): Promise<string> {
+  private async getElementTypeFromLocator(
+    elementLocator: Locator
+  ): Promise<string> {
     if (!this.page) throw new Error("Page not initialized");
-    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
-    const element = this.page.locator(selector).first(); // Assuming ID is unique
     const tagName = (
-      await element.evaluate((el) => (el as Element).tagName)
+      await elementLocator.evaluate((el) => (el as Element).tagName)
     ).toLowerCase();
     if (tagName === "input") {
-      const type = await element.getAttribute("type");
+      const type = await this.getAttribute(elementLocator, "type");
       return `input-${type || "text"}`.toLowerCase();
     }
     return tagName;
   }
 
-  private async getElementLabelById(elementId: string): Promise<string> {
+  private async getElementLabelFromLocator(
+    elementLocator: Locator,
+    elementId: string,
+    elementType: string
+  ): Promise<string> {
     if (!this.page) throw new Error("Page not initialized");
-    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
-    const element = this.page.locator(selector).first();
 
-    let label = await element.getAttribute("aria-label");
+    let label = await this.getAttribute(elementLocator, "aria-label");
     if (label && label.trim()) return label.trim();
 
-    const elementTypeForLabel = await this.getElementTypeById(elementId);
-    if (!elementTypeForLabel.startsWith("input")) {
-      label = await element.textContent();
+    const mcpLabel = await this.getAttribute(
+      elementLocator,
+      DataAttributes.ELEMENT_LABEL
+    );
+    if (mcpLabel && mcpLabel.trim()) return mcpLabel.trim();
+
+    if (!elementType.startsWith("input")) {
+      const textContent = await elementLocator.textContent();
+      label = textContent === null ? undefined : textContent.trim();
       if (label && label.trim()) return label.trim();
     }
 
     if (
-      elementTypeForLabel === "input-text" ||
-      elementTypeForLabel === "input-password" ||
-      elementTypeForLabel === "input-search" ||
-      elementTypeForLabel === "input-url" ||
-      elementTypeForLabel === "input-tel" ||
-      elementTypeForLabel === "input-email"
+      elementType.startsWith("input-") &&
+      ![
+        "input-button",
+        "input-submit",
+        "input-reset",
+        "input-checkbox",
+        "input-radio",
+      ].includes(elementType)
     ) {
-      label = await element.getAttribute("placeholder");
+      label = await this.getAttribute(elementLocator, "placeholder");
       if (label && label.trim()) return label.trim();
     }
-    return elementId; // Fallback
+    return elementId;
   }
 
   async getElementState(
@@ -159,37 +186,102 @@ export class PlaywrightController {
     const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
     console.log(`Getting state for element with ID: ${elementId}`);
     try {
-      const element = this.page.locator(selector).first(); // Use .first() assuming IDs are unique
-      if ((await element.count()) === 0) {
+      const elementLocator = this.page.locator(selector).first();
+      if ((await elementLocator.count()) === 0) {
         console.warn(`Element with ID ${elementId} not found.`);
         return null;
       }
 
-      const elementType = await this.getElementTypeById(elementId);
-      const label = await this.getElementLabelById(elementId);
+      const elementType = await this.getElementTypeFromLocator(elementLocator);
+      const label = await this.getElementLabelFromLocator(
+        elementLocator,
+        elementId,
+        elementType
+      );
 
       let currentValue: string | undefined = undefined;
       let isChecked: boolean | undefined = undefined;
+      let isDisabled: boolean | undefined = undefined;
+      let isReadOnly: boolean | undefined = undefined;
+
+      const mcpDisabled = await this.getAttribute(
+        elementLocator,
+        DataAttributes.DISABLED_STATE
+      );
+      if (mcpDisabled !== undefined) {
+        isDisabled = mcpDisabled === "true";
+      } else {
+        isDisabled = await elementLocator.isDisabled();
+      }
+
+      const mcpReadOnly = await this.getAttribute(
+        elementLocator,
+        DataAttributes.READONLY_STATE
+      );
+      if (mcpReadOnly !== undefined) {
+        isReadOnly = mcpReadOnly === "true";
+      } else {
+        if (elementType.startsWith("input-") || elementType === "textarea") {
+          isReadOnly = !(await elementLocator.isEditable());
+        }
+      }
 
       if (elementType.startsWith("input-")) {
         if (elementType === "input-checkbox" || elementType === "input-radio") {
-          isChecked = await element.isChecked();
+          isChecked = await elementLocator.isChecked();
         } else if (
-          elementType !== "input-button" &&
-          elementType !== "input-submit" &&
-          elementType !== "input-reset"
+          ![
+            "input-button",
+            "input-submit",
+            "input-reset",
+            "input-file",
+          ].includes(elementType)
         ) {
-          currentValue = await element.inputValue();
+          try {
+            currentValue = await elementLocator.inputValue();
+          } catch (e) {
+            currentValue = undefined;
+          }
         }
       }
+
+      const purpose = await this.getAttribute(
+        elementLocator,
+        DataAttributes.PURPOSE
+      );
+      const group = await this.getAttribute(
+        elementLocator,
+        DataAttributes.GROUP
+      );
+      const controls = await this.getAttribute(
+        elementLocator,
+        DataAttributes.CONTROLS
+      );
+      const updatesContainer = await this.getAttribute(
+        elementLocator,
+        DataAttributes.UPDATES_CONTAINER
+      );
+      const navigatesTo = await this.getAttribute(
+        elementLocator,
+        DataAttributes.NAVIGATES_TO
+      );
 
       const state: Partial<InteractiveElementInfo> = {
         id: elementId,
         elementType,
         label,
+        isDisabled,
+        isReadOnly,
       };
+
       if (currentValue !== undefined) state.currentValue = currentValue;
       if (isChecked !== undefined) state.isChecked = isChecked;
+      if (purpose !== undefined) state.purpose = purpose;
+      if (group !== undefined) state.group = group;
+      if (controls !== undefined) state.controls = controls;
+      if (updatesContainer !== undefined)
+        state.updatesContainer = updatesContainer;
+      if (navigatesTo !== undefined) state.navigatesTo = navigatesTo;
 
       console.log(`State for element ${elementId}:`, state);
       return state;
