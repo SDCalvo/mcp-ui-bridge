@@ -167,18 +167,9 @@ The `DomParser` currently:
 
 - **Phase 3.2: Refinement & Robustness**
 
-  - [ ] **Task 3.2.1**: Enhance `DomParser` and `PlaywrightController`
-    - [ ] More sophisticated error handling and logging in parser and controller methods.
-    - [ ] Handle edge cases (e.g., missing attributes, elements appearing/disappearing during parsing).
-    - [x] Implement parsing for/ensure full coverage of defined `data-mcp-*` attributes (element-type, element-state, value).
-    - [ ] Consider if `data-mcp-element-state` needs specific handling beyond disabled/readonly/checked (Covered by customState implementation).
-  - [ ] **Task 3.2.2**: CLI Enhancements
-    - [ ] Improve output formatting (e.g., clearer tables, more structured JSON output option).
-    - [ ] Add configuration options (headless mode toggle, target URL via arg/env).
-    - [ ] Consider more interaction commands if needed (e.g., `toggle <id>`, `select <id> <value>`).
-  - [ ] **Task 3.2.3**: Formal Testing
-    - [ ] Develop unit tests for `DomParser` helper functions (label/type inference).
-    - [ ] Develop basic integration tests for CLI commands interacting with a controlled sample HTML page.
+  - [x] **Task 3.2.1**: Enhance `DomParser` and `PlaywrightController`
+    - [x] Ensure full coverage of defined `data-mcp-*` attributes (element-type, element-state, value successfully tested).
+    - [x] Improve error handling, logging, and edge case management (Implemented `ActionResult`, `ParserResult`, better error categorization and messages, including retry suggestions for timeouts).
 
 - **Phase 3.3: MCP Integration**
 
@@ -192,7 +183,22 @@ The `DomParser` currently:
   - [ ] **Task 3.3.3**: MCP Test Client
     - [ ] Create a simple script or use an MCP client tool to send test messages to the `react-cli-mcp` server.
 
-- **Phase 3.4: Package as a Turnkey MCP Server/Tool**
+- **Phase 3.4: Testing & Validation**
+
+  - [ ] **Task 3.4.1**: Unit Testing
+    - [ ] Write unit tests for parser logic
+    - [ ] Write unit tests for PlaywrightController
+    - [ ] Write unit tests for MCP message handling
+  - [ ] **Task 3.4.2**: Integration Testing
+    - [ ] Test CLI functionality
+    - [ ] Test MCP server functionality
+    - [ ] Test end-to-end flows with the Todo app
+  - [ ] **Task 3.4.3**: Performance Testing
+    - [ ] Measure response times for various operations
+    - [ ] Test with different page complexities
+    - [ ] Identify and address bottlenecks
+
+- **Phase 3.5: Package as a Turnkey MCP Server/Tool**
 
   - **Goal**: Package the `react-cli-mcp` system into an easy-to-use tool. Developers can install and run this tool against their React application, which will automatically start the DOM parser, the MCP server (for LLM interaction), and optionally the interactive CLI (for debugging/direct use).
 
@@ -270,7 +276,7 @@ The `DomParser` currently:
 
 ## Progress Update (Reflects current state after review)
 
-**Current Phase: End of 3.1 (Core Parser, Controller & Basic CLI) / Beginning of 3.2 (Refinement & Robustness)**
+**Current Phase: Phase 3.2 (Refinement & Robustness)**
 
 **Completed Tasks:**
 
@@ -285,12 +291,6 @@ The `DomParser` currently:
 
 - **Task 3.2.1**: Enhance `DomParser` and `PlaywrightController`:
   - [x] Ensure full coverage of defined `data-mcp-*` attributes (element-type, element-state, value successfully tested).
-  - [ ] Improve error handling, logging, and edge case management.
-- **Task 3.2.2**: CLI Enhancements:
-  - [ ] Improve output formatting.
-  - [ ] Add configuration options.
-- **Task 3.2.3**: Formal Testing:
-  - [ ] Unit tests for parser logic.
-  - [ ] Integration tests for CLI.
+  - [x] Improve error handling, logging, and edge case management (Implemented `ActionResult`, `ParserResult`, better error categorization and messages, including retry suggestions for timeouts).
 
 Following this, we will proceed to **Phase 3.3: MCP Integration**.

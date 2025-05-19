@@ -1,0 +1,9 @@
+{
+    "mcpServers": {
+        "react-app-mcp-agent": {
+            "transport": "sse",
+            "url": "http://localhost:3000/mcp/sse",
+            "description": "MCP server for interacting with the target React application via Playwright."
+        }
+    }
+}

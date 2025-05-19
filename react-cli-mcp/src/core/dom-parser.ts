@@ -6,28 +6,11 @@ import {
   PageRegionInfo,
   StatusMessageAreaInfo,
   LoadingIndicatorInfo,
-} from "../types"; // Adjusted path
-import { DataAttributes } from "../types/attributes"; // Import the new constants object
+} from "../types/index.js"; // Adjusted path
+import { DataAttributes } from "../types/attributes.js"; // Import the new constants object
 
-// --- Custom Parser Result Types and Interfaces ---
-
-/**
- * Standardized result for DOM parsing operations.
- */
-export interface ParserResult<T> {
-  success: boolean;
-  message?: string;
-  errorType?: ParserErrorType;
-  data: T | null; // Data will be the array of found elements or null on failure/empty
-}
-
-/**
- * Categorizes the type of error encountered during parsing.
- */
-export type ParserErrorType =
-  | "PageNotAvailable" // If this.page is null
-  | "ParsingFailed" // General error during Playwright operations in parsing
-  | "AttributeMissing"; // Warning for non-critical missing attributes (might not result in overall failure)
+// Import centralized types
+import { ParserResult, DomParserErrorType } from "./types.js";
 
 export class DomParser {
   constructor(private page: Page | null) {}
@@ -114,7 +97,7 @@ export class DomParser {
     return elementId; // Fallback to elementId
   }
 
-  async findInteractiveElements(): Promise<
+  async getInteractiveElementsWithState(): Promise<
     ParserResult<InteractiveElementInfo[]>
   > {
     if (!this.page) {
@@ -124,18 +107,18 @@ export class DomParser {
       return {
         success: false,
         message,
-        errorType: "PageNotAvailable",
-        data: null,
+        errorType: DomParserErrorType.PageNotAvailable,
+        data: undefined,
       };
     }
 
-    console.log("Scanning for interactive elements...");
+    console.log("Scanning for interactive elements with state...");
     try {
       const elementsLocator: Locator = this.page.locator(
         `[${DataAttributes.INTERACTIVE_ELEMENT}]`
       );
       const count = await elementsLocator.count();
-      console.log(`Found ${count} interactive element(s).`);
+      console.log(`Found ${count} interactive element(s) with state.`);
 
       const foundElements: InteractiveElementInfo[] = [];
 
@@ -283,31 +266,78 @@ export class DomParser {
 
         foundElements.push(elementInfo);
       }
-      const successMessage = `Successfully parsed ${foundElements.length} interactive elements.`;
+      const successMessage = `Successfully parsed ${foundElements.length} interactive elements with state.`;
       return { success: true, message: successMessage, data: foundElements };
     } catch (error: any) {
       const errorMessage =
-        "An error occurred while parsing interactive elements.";
+        "An error occurred while parsing interactive elements with state.";
       console.error(errorMessage, error);
       return {
         success: false,
         message: `${errorMessage} Error: ${error.message}`,
-        errorType: "ParsingFailed",
-        data: null,
+        errorType: DomParserErrorType.ParsingFailed,
+        data: undefined,
       };
     }
   }
 
-  async findDisplayContainers(): Promise<ParserResult<DisplayContainerInfo[]>> {
+  async getStructuredData(): Promise<
+    ParserResult<{
+      containers: DisplayContainerInfo[];
+      regions: PageRegionInfo[];
+      statusMessages: StatusMessageAreaInfo[];
+      loadingIndicators: LoadingIndicatorInfo[];
+    }>
+  > {
     if (!this.page) {
       const message =
-        "DOM parsing for display containers failed: Page object is not available.";
+        "DOM parsing for structured data failed: Page object is not available.";
       console.error(message);
       return {
         success: false,
         message,
-        errorType: "PageNotAvailable",
-        data: null,
+        errorType: DomParserErrorType.PageNotAvailable,
+        data: undefined,
+      };
+    }
+    console.log("Scanning for all structured data elements...");
+    try {
+      const containersResult = await this.findDisplayContainersInternal();
+      const regionsResult = await this.findPageRegionsInternal();
+      const statusMessagesResult = await this.findStatusMessageAreasInternal();
+      const loadingIndicatorsResult =
+        await this.findLoadingIndicatorsInternal();
+
+      const structuredData = {
+        containers: containersResult.data || [],
+        regions: regionsResult.data || [],
+        statusMessages: statusMessagesResult.data || [],
+        loadingIndicators: loadingIndicatorsResult.data || [],
+      };
+
+      const message = "Successfully retrieved all structured data.";
+      return { success: true, message, data: structuredData };
+    } catch (error: any) {
+      const errorMessage = "An error occurred while parsing structured data.";
+      console.error(errorMessage, error);
+      return {
+        success: false,
+        message: `${errorMessage} Error: ${error.message}`,
+        errorType: DomParserErrorType.ParsingFailed,
+        data: undefined,
+      };
+    }
+  }
+
+  private async findDisplayContainersInternal(): Promise<
+    ParserResult<DisplayContainerInfo[]>
+  > {
+    if (!this.page) {
+      return {
+        success: false,
+        message: "Page not available",
+        errorType: DomParserErrorType.PageNotAvailable,
+        data: undefined,
       };
     }
     console.log("Scanning for display containers...");
@@ -416,22 +446,21 @@ export class DomParser {
       return {
         success: false,
         message: `${errorMessage} Error: ${error.message}`,
-        errorType: "ParsingFailed",
-        data: null,
+        errorType: DomParserErrorType.ParsingFailed,
+        data: undefined,
       };
     }
   }
 
-  async findPageRegions(): Promise<ParserResult<PageRegionInfo[]>> {
+  private async findPageRegionsInternal(): Promise<
+    ParserResult<PageRegionInfo[]>
+  > {
     if (!this.page) {
-      const message =
-        "DOM parsing for page regions failed: Page object is not available.";
-      console.error(message);
       return {
         success: false,
-        message,
-        errorType: "PageNotAvailable",
-        data: null,
+        message: "Page not available",
+        errorType: DomParserErrorType.PageNotAvailable,
+        data: undefined,
       };
     }
     console.log("Scanning for page regions...");
@@ -478,24 +507,21 @@ export class DomParser {
       return {
         success: false,
         message: `${errorMessage} Error: ${error.message}`,
-        errorType: "ParsingFailed",
-        data: null,
+        errorType: DomParserErrorType.ParsingFailed,
+        data: undefined,
       };
     }
   }
 
-  async findStatusMessageAreas(): Promise<
+  private async findStatusMessageAreasInternal(): Promise<
     ParserResult<StatusMessageAreaInfo[]>
   > {
     if (!this.page) {
-      const message =
-        "DOM parsing for status message areas failed: Page object is not available.";
-      console.error(message);
       return {
         success: false,
-        message,
-        errorType: "PageNotAvailable",
-        data: null,
+        message: "Page not available",
+        errorType: DomParserErrorType.PageNotAvailable,
+        data: undefined,
       };
     }
     console.log("Scanning for status message areas...");
@@ -548,22 +574,21 @@ export class DomParser {
       return {
         success: false,
         message: `${errorMessage} Error: ${error.message}`,
-        errorType: "ParsingFailed",
-        data: null,
+        errorType: DomParserErrorType.ParsingFailed,
+        data: undefined,
       };
     }
   }
 
-  async findLoadingIndicators(): Promise<ParserResult<LoadingIndicatorInfo[]>> {
+  private async findLoadingIndicatorsInternal(): Promise<
+    ParserResult<LoadingIndicatorInfo[]>
+  > {
     if (!this.page) {
-      const message =
-        "DOM parsing for loading indicators failed: Page object is not available.";
-      console.error(message);
       return {
         success: false,
-        message,
-        errorType: "PageNotAvailable",
-        data: null,
+        message: "Page not available",
+        errorType: DomParserErrorType.PageNotAvailable,
+        data: undefined,
       };
     }
     console.log("Scanning for loading indicators...");
@@ -627,8 +652,8 @@ export class DomParser {
       return {
         success: false,
         message: `${errorMessage} Error: ${error.message}`,
-        errorType: "ParsingFailed",
-        data: null,
+        errorType: DomParserErrorType.ParsingFailed,
+        data: undefined,
       };
     }
   }

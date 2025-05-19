@@ -1,17 +1,14 @@
 import inquirer from "inquirer";
+import { PlaywrightController } from "./core/playwright-controller.js";
+import { DomParser } from "./core/dom-parser.js";
+import { ActionResult, ParserResult } from "./core/types.js";
 import {
-  PlaywrightController,
-  ActionResult,
-} from "./core/playwright-controller";
-import { DomParser, ParserResult } from "./core/dom-parser";
-// Importing types for potentially using them in main.ts if we decide to type the results further
-// import {
-//   InteractiveElementInfo,
-//   DisplayContainerInfo,
-//   PageRegionInfo,
-//   StatusMessageAreaInfo,
-//   LoadingIndicatorInfo,
-// } from "./types"; // Not strictly needed here as types are inferred by processParserResult
+  InteractiveElementInfo,
+  DisplayContainerInfo,
+  PageRegionInfo,
+  StatusMessageAreaInfo,
+  LoadingIndicatorInfo,
+} from "./types/index.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
@@ -20,68 +17,62 @@ async function displayCurrentScreenState(domParser: DomParser): Promise<void> {
   console.log("--- CURRENT SCREEN STATE ---");
   console.log("------------------------------------");
 
-  // Helper to process and log parser results
-  const processParserResult = <T>(
-    result: ParserResult<T[]>,
+  const processAndLog = <T>(
+    items: T[] | undefined,
     title: string,
-    emptyMessage: string
+    emptyMessage: string,
+    itemLogger?: (item: T) => void
   ) => {
     console.log(`\n--- ${title} ---`);
-    if (result.success && result.data) {
-      if (result.data.length > 0) {
-        console.log(result.message || `${result.data.length} item(s) found.`);
+    if (items && items.length > 0) {
+      console.log(`${items.length} item(s) found.`);
+      if (itemLogger) {
+        items.forEach(itemLogger);
       } else {
-        console.log(emptyMessage);
+        items.forEach((item) => console.log(JSON.stringify(item, null, 2)));
       }
-    } else if (result.success && !result.data) {
-      console.log(emptyMessage);
     } else {
-      console.error(`Error parsing ${title.toLowerCase()}: ${result.message}`);
-      if (result.errorType) {
-        console.error(`Error type: ${result.errorType}`);
-      }
+      console.log(emptyMessage);
     }
   };
 
-  // Corrected: No explicit type annotation needed, it will be ParserResult<InteractiveElementInfo[]>
-  const interactiveElementsResult = await domParser.findInteractiveElements();
-  processParserResult(
-    interactiveElementsResult,
-    "Available Actions (Interactive Elements)",
-    "No interactive elements found on the current screen."
-  );
+  const structuredDataResult = await domParser.getStructuredData();
 
-  // Corrected: No explicit type annotation needed
-  const displayContainersResult = await domParser.findDisplayContainers();
-  processParserResult(
-    displayContainersResult,
-    "Displayed Data (Display Containers)",
-    "No display containers found on the current screen."
-  );
-
-  // Corrected: No explicit type annotation needed
-  const pageRegionsResult = await domParser.findPageRegions();
-  processParserResult(
-    pageRegionsResult,
-    "Page Regions",
-    "No page regions found."
-  );
-
-  // Corrected: No explicit type annotation needed
-  const statusMessagesResult = await domParser.findStatusMessageAreas();
-  processParserResult(
-    statusMessagesResult,
-    "Status Message Areas",
-    "No status message areas found."
-  );
-
-  // Corrected: No explicit type annotation needed
-  const loadingIndicatorsResult = await domParser.findLoadingIndicators();
-  processParserResult(
-    loadingIndicatorsResult,
-    "Loading Indicators",
-    "No loading indicators found."
-  );
+  if (structuredDataResult.success && structuredDataResult.data) {
+    processAndLog<InteractiveElementInfo>(
+      await (
+        await domParser.getInteractiveElementsWithState()
+      ).data,
+      "Available Actions (Interactive Elements)",
+      "No interactive elements found on the current screen."
+    );
+    processAndLog<DisplayContainerInfo>(
+      structuredDataResult.data.containers,
+      "Displayed Data (Display Containers)",
+      "No display containers found on the current screen."
+    );
+    processAndLog<PageRegionInfo>(
+      structuredDataResult.data.regions,
+      "Page Regions",
+      "No page regions found."
+    );
+    processAndLog<StatusMessageAreaInfo>(
+      structuredDataResult.data.statusMessages,
+      "Status Message Areas",
+      "No status message areas found."
+    );
+    processAndLog<LoadingIndicatorInfo>(
+      structuredDataResult.data.loadingIndicators,
+      "Loading Indicators",
+      "No loading indicators found."
+    );
+  } else {
+    console.error("Could not retrieve structured data from the page:");
+    console.error(structuredDataResult.message || "Unknown parsing error.");
+    if (structuredDataResult.errorType) {
+      console.error(`Error type: ${structuredDataResult.errorType}`);
+    }
+  }
 
   console.log("------------------------------------\n");
 }
@@ -114,66 +105,65 @@ async function commandLoop(
     const elementId = parts[1];
     const textToType = parts[2]?.replace(/^"|"$/g, "");
 
-    let actionResult: ActionResult | null = null;
+    let actionResult: ActionResult<any> | null = null;
 
     switch (action) {
-      case "click":
+      case "click": {
         if (!elementId) {
           console.log("Please provide an element ID to click.");
           break;
         }
-        actionResult = await controller.clickElement(elementId);
-        if (actionResult.success) {
-          console.log(actionResult.message || `Clicked element: ${elementId}.`);
+        const result = await controller.click(elementId);
+        actionResult = result;
+        if (result.success) {
+          console.log(result.message || `Clicked element: ${elementId}.`);
         } else {
-          console.error(
-            `Click failed: ${actionResult.message || "Unknown error."}`
-          );
-          if (actionResult.errorType)
-            console.error(`Error type: ${actionResult.errorType}`);
+          console.error(`Click failed: ${result.message || "Unknown error."}`);
+          if (result.errorType)
+            console.error(`Error type: ${result.errorType}`);
         }
         break;
-      case "type":
+      }
+      case "type": {
         if (!elementId || textToType === undefined) {
           console.log(
             'Please provide an element ID and text to type (e.g., type my-input "hello").'
           );
           break;
         }
-        actionResult = await controller.typeInElement(elementId, textToType);
-        if (actionResult.success) {
-          console.log(
-            actionResult.message || `Typed into element: ${elementId}.`
-          );
+        const result = await controller.type(elementId, textToType);
+        actionResult = result;
+        if (result.success) {
+          console.log(result.message || `Typed into element: ${elementId}.`);
         } else {
-          console.error(
-            `Type failed: ${actionResult.message || "Unknown error."}`
-          );
-          if (actionResult.errorType)
-            console.error(`Error type: ${actionResult.errorType}`);
+          console.error(`Type failed: ${result.message || "Unknown error."}`);
+          if (result.errorType)
+            console.error(`Error type: ${result.errorType}`);
         }
         break;
-      case "state":
+      }
+      case "state": {
         if (!elementId) {
           console.log("Please provide an element ID to get its state.");
           break;
         }
-        const stateResult = await controller.getElementState(elementId);
-        if (stateResult.success && stateResult.data) {
+        const result = await controller.getElementState(elementId);
+        if (result.success && result.data) {
           console.log(`State for element '${elementId}':`);
-          console.log(JSON.stringify(stateResult.data, null, 2));
-        } else if (stateResult.success && !stateResult.data) {
+          console.log(JSON.stringify(result.data, null, 2));
+        } else if (result.success && !result.data) {
           console.log(
             `Element with ID '${elementId}' found, but no specific state details returned.`
           );
         } else {
           console.error(
-            `Get state failed: ${stateResult.message || "Unknown error."}`
+            `Get state failed: ${result.message || "Unknown error."}`
           );
-          if (stateResult.errorType)
-            console.error(`Error type: ${stateResult.errorType}`);
+          if (result.errorType)
+            console.error(`Error type: ${result.errorType}`);
         }
         break;
+      }
       case "scan":
         console.log(
           "Re-scanning page (current state will be displayed next)..."
@@ -188,10 +178,14 @@ async function commandLoop(
           'Unknown command. Available: click <id>, type <id> "text", state <id>, scan, quit'
         );
     }
-    if (actionResult && !actionResult.success) {
-      console.log(
-        "Action failed. State will be refreshed. Consider using 'scan' if UI is not as expected."
-      );
+    if (actionResult) {
+      if (!actionResult.success) {
+        console.log(
+          "Action failed. State will be refreshed. Consider using 'scan' if UI is not as expected."
+        );
+      }
+    } else if (!["scan", "quit", "state"].includes(action || "")) {
+      console.log("Command processed. State will be refreshed.");
     }
   }
 }

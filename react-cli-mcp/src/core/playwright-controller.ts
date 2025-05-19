@@ -1,31 +1,8 @@
 import { chromium, Browser, Page, BrowserContext, Locator } from "playwright";
-import { DataAttributes } from "../types/attributes";
-import { InteractiveElementInfo } from "../types";
-
-export interface ActionResult<T = any> {
-  success: boolean;
-  message?: string;
-  errorType?: ActionErrorType;
-  data?: T; // For methods that return data, like getElementState
-}
-
-/**
- * Categorizes the type of error encountered.
- */
-export type ActionErrorType =
-  | "BrowserLaunchFailed"
-  | "BrowserNotLaunched"
-  | "PageNotInitialized"
-  | "NavigationFailed"
-  | "ElementNotFound"
-  | "ElementNotVisible"
-  | "ElementNotClickable"
-  | "ElementNotEditable"
-  | "Timeout"
-  | "InteractionFailed"
-  | "StateRetrievalFailed"
-  | "BrowserCloseFailed"
-  | "UnknownError";
+import { DataAttributes } from "../types/attributes.js";
+import { InteractiveElementInfo } from "../types/index.js";
+// Import centralized types
+import { ActionResult, PlaywrightErrorType } from "./types.js";
 
 export class PlaywrightController {
   private browser: Browser | null = null;
@@ -38,6 +15,7 @@ export class PlaywrightController {
   ) {}
 
   async launch(): Promise<ActionResult> {
+    // Uses imported ActionResult
     if (this.browser) {
       const message = "Browser launch skipped: Already launched.";
       console.warn(message);
@@ -66,7 +44,7 @@ export class PlaywrightController {
       return {
         success: false,
         message: `${errMessage} Error: ${error.message}`,
-        errorType: "BrowserLaunchFailed",
+        errorType: PlaywrightErrorType.BrowserLaunchFailed, // Uses imported Enum
       };
     }
   }
@@ -87,11 +65,16 @@ export class PlaywrightController {
       timeout?: number;
     }
   ): Promise<ActionResult> {
+    // Uses imported ActionResult
     if (!this.page) {
       const message =
         "Navigation failed: Page is not initialized. Call launch() first.";
       console.error(message);
-      return { success: false, message, errorType: "PageNotInitialized" };
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      }; // Corrected ErrorType
     }
     console.log(`Navigating to ${url}...`);
     try {
@@ -105,9 +88,9 @@ export class PlaywrightController {
     } catch (error: any) {
       const errMessage = `Failed to navigate to ${url}.`;
       console.error(errMessage, error);
-      let errorType: ActionErrorType = "NavigationFailed";
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.NavigationFailed; // Uses imported Enum
       if (error.name === "TimeoutError") {
-        errorType = "Timeout";
+        errorType = PlaywrightErrorType.Timeout;
       }
       return {
         success: false,
@@ -118,9 +101,6 @@ export class PlaywrightController {
   }
 
   getPage(): Page | null {
-    // Consumers should check for null.
-    // Or, if strict error prevention is needed here, this could also return an ActionResult.
-    // For now, DomParser will need to handle a null page.
     if (!this.page) {
       console.warn("getPage() called but page is not initialized.");
     }
@@ -128,10 +108,11 @@ export class PlaywrightController {
   }
 
   async close(): Promise<ActionResult> {
+    // Uses imported ActionResult
     if (!this.browser) {
       const message = "Browser close skipped: Not launched or already closed.";
       console.warn(message);
-      return { success: true, message }; // Considered success as desired state is achieved
+      return { success: true, message };
     }
     console.log("Attempting to close browser...");
     try {
@@ -145,65 +126,68 @@ export class PlaywrightController {
     } catch (error: any) {
       const errMessage = "Failed to close the browser.";
       console.error(errMessage, error);
-      // Even if close fails, set to null to reflect intent
       this.browser = null;
       this.context = null;
       this.page = null;
       return {
         success: false,
         message: `${errMessage} Error: ${error.message}`,
-        errorType: "BrowserCloseFailed",
+        errorType: PlaywrightErrorType.BrowserCloseFailed, // Uses imported Enum
       };
     }
   }
 
-  // --- Interaction Methods ---
-  async clickElement(
+  async click(
     elementId: string,
     timeout: number = this.DEFAULT_TIMEOUT
   ): Promise<ActionResult> {
+    // Renamed from clickElement, uses imported ActionResult
     if (!this.page) {
       const message = `Click failed for element '${elementId}': Page not initialized.`;
       console.error(message);
-      return { success: false, message, errorType: "PageNotInitialized" };
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      }; // Corrected ErrorType
     }
     const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
     console.log(
       `Attempting to click element with ID: ${elementId} (selector: ${selector})`
     );
     try {
-      const element = this.page.locator(selector).first(); // Ensure we target one element
+      const element = this.page.locator(selector).first();
       if ((await element.count()) === 0) {
         const message = `Click failed: Element with ID '${elementId}' not found.`;
         console.warn(message);
-        return { success: false, message, errorType: "ElementNotFound" };
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        }; // Uses imported Enum
       }
       await element.waitFor({ state: "visible", timeout });
-      await element.click({ timeout }); // Playwright's click also waits for actionable
+      await element.click({ timeout });
       const message = `Successfully clicked element with ID: ${elementId}`;
       console.log(message);
       return { success: true, message };
     } catch (error: any) {
       console.error(`Error clicking element with ID ${elementId}:`, error);
-      let errorType: ActionErrorType = "InteractionFailed";
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed; // Uses imported Enum
       let errMessage = `Failed to click element with ID '${elementId}'.`;
 
       if (error.name === "TimeoutError") {
-        errorType = "Timeout";
+        errorType = PlaywrightErrorType.Timeout;
         errMessage = `Timeout waiting for element '${elementId}' to be visible or clickable.`;
+        // Example: checking for visibility error (Playwright messages might vary)
+      } else if (error.message?.toLowerCase().includes("not visible")) {
+        errorType = PlaywrightErrorType.ActionFailed; // Or a more specific one if you add it to PlaywrightErrorType
       } else if (
-        error.message?.includes("not visible") ||
-        error.message?.includes("hidden")
+        error.message?.toLowerCase().includes("not clickable") ||
+        error.message?.toLowerCase().includes("intercepted by another element")
       ) {
-        errorType = "ElementNotVisible";
-      } else if (
-        error.message?.includes("intercepted") ||
-        error.message?.includes("not clickable")
-      ) {
-        errorType = "ElementNotClickable";
+        errorType = PlaywrightErrorType.ActionFailed; // Or a more specific one
       }
-      // Add more specific error checks based on common Playwright error messages if needed
-
       return {
         success: false,
         message: `${errMessage} Details: ${error.message}`,
@@ -212,15 +196,20 @@ export class PlaywrightController {
     }
   }
 
-  async typeInElement(
+  async type(
     elementId: string,
     textToType: string,
     timeout: number = this.DEFAULT_TIMEOUT
   ): Promise<ActionResult> {
+    // Renamed from typeInElement, uses imported ActionResult
     if (!this.page) {
       const message = `Type failed for element '${elementId}': Page not initialized.`;
       console.error(message);
-      return { success: false, message, errorType: "PageNotInitialized" };
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      }; // Corrected ErrorType
     }
     const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
     console.log(
@@ -231,14 +220,21 @@ export class PlaywrightController {
       if ((await element.count()) === 0) {
         const message = `Type failed: Element with ID '${elementId}' not found.`;
         console.warn(message);
-        return { success: false, message, errorType: "ElementNotFound" };
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        }; // Uses imported Enum
       }
       await element.waitFor({ state: "visible", timeout });
-      // Check if editable before fill, Playwright's fill also implies editability check
       if (!(await element.isEditable({ timeout }))) {
         const message = `Type failed: Element with ID '${elementId}' is not editable.`;
         console.warn(message);
-        return { success: false, message, errorType: "ElementNotEditable" };
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ActionFailed,
+        }; // Or a more specific one
       }
       await element.fill(textToType, { timeout });
       const message = `Successfully typed "${textToType}" in element with ID: ${elementId}`;
@@ -246,22 +242,20 @@ export class PlaywrightController {
       return { success: true, message };
     } catch (error: any) {
       console.error(`Error typing in element with ID ${elementId}:`, error);
-      let errorType: ActionErrorType = "InteractionFailed";
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed; // Uses imported Enum
       let errMessage = `Failed to type in element with ID '${elementId}'.`;
 
       if (error.name === "TimeoutError") {
-        errorType = "Timeout";
+        errorType = PlaywrightErrorType.Timeout;
         errMessage = `Timeout waiting for element '${elementId}' to be visible or editable.`;
-      } else if (error.message?.includes("not visible")) {
-        errorType = "ElementNotVisible";
+      } else if (error.message?.toLowerCase().includes("not visible")) {
+        errorType = PlaywrightErrorType.ActionFailed; // Or a more specific one
       } else if (
-        error.message?.includes("not editable") ||
-        error.message?.includes("disabled")
+        error.message?.toLowerCase().includes("not editable") ||
+        error.message?.toLowerCase().includes("disabled")
       ) {
-        errorType = "ElementNotEditable";
+        errorType = PlaywrightErrorType.ActionFailed; // Or a more specific one
       }
-      // Add more specific error checks
-
       return {
         success: false,
         message: `${errMessage} Details: ${error.message}`,
@@ -270,13 +264,9 @@ export class PlaywrightController {
     }
   }
 
-  // --- Helper methods for element state retrieval (similar to DomParser, but for single elements) ---
   private async getElementTypeFromLocator(
     elementLocator: Locator
   ): Promise<string> {
-    // This is an internal helper, errors will be caught by getElementState
-    // if (!this.page) throw new PlaywrightControllerError("Page not initialized for getElementTypeFromLocator");
-
     const explicitType = await this.getAttribute(
       elementLocator,
       DataAttributes.ELEMENT_TYPE
@@ -289,8 +279,8 @@ export class PlaywrightController {
       await elementLocator.evaluate((el) => (el as Element).tagName)
     ).toLowerCase();
     if (tagName === "input") {
-      const type = await this.getAttribute(elementLocator, "type");
-      return `input-${type || "text"}`.toLowerCase();
+      const typeAttr = await this.getAttribute(elementLocator, "type"); // Renamed variable to avoid conflict
+      return `input-${typeAttr || "text"}`.toLowerCase();
     }
     return tagName;
   }
@@ -300,9 +290,6 @@ export class PlaywrightController {
     elementId: string,
     elementType: string
   ): Promise<string> {
-    // This is an internal helper, errors will be caught by getElementState
-    // if (!this.page) throw new PlaywrightControllerError("Page not initialized for getElementLabelFromLocator");
-
     let label = await this.getAttribute(elementLocator, "aria-label");
     if (label && label.trim()) return label.trim();
 
@@ -338,13 +325,14 @@ export class PlaywrightController {
     elementId: string,
     timeout: number = this.DEFAULT_TIMEOUT
   ): Promise<ActionResult<Partial<InteractiveElementInfo> | null>> {
+    // Uses imported ActionResult
     if (!this.page) {
       const message = `Get element state failed for '${elementId}': Page not initialized.`;
       console.error(message);
       return {
         success: false,
         message,
-        errorType: "PageNotInitialized",
+        errorType: PlaywrightErrorType.PageNotAvailable, // Corrected ErrorType
         data: null,
       };
     }
@@ -352,7 +340,6 @@ export class PlaywrightController {
     console.log(`Getting state for element with ID: ${elementId}`);
     try {
       const elementLocator = this.page.locator(selector).first();
-      // Wait for the element to be attached, visible might be too strict for state retrieval
       await elementLocator.waitFor({ state: "attached", timeout });
 
       if ((await elementLocator.count()) === 0) {
@@ -361,7 +348,7 @@ export class PlaywrightController {
         return {
           success: false,
           message,
-          errorType: "ElementNotFound",
+          errorType: PlaywrightErrorType.ElementNotFound, // Uses imported Enum
           data: null,
         };
       }
@@ -378,7 +365,6 @@ export class PlaywrightController {
       let isDisabled: boolean | undefined = undefined;
       let isReadOnly: boolean | undefined = undefined;
 
-      // Prioritize data-mcp-value
       currentValue = await this.getAttribute(
         elementLocator,
         DataAttributes.VALUE
@@ -401,9 +387,6 @@ export class PlaywrightController {
       if (mcpReadOnly !== undefined) {
         isReadOnly = mcpReadOnly === "true";
       } else {
-        // isEditable is true if the element is not disabled and not readonly.
-        // So, if it's not editable, it could be either disabled or readonly.
-        // We already checked isDisabled.
         if (
           elementType.startsWith("input-") ||
           elementType === "textarea" ||
@@ -411,8 +394,7 @@ export class PlaywrightController {
         ) {
           isReadOnly = !(await elementLocator.isEditable({ timeout }));
           if (isDisabled && isReadOnly) {
-            // If it's disabled, isEditable is false. Don't mark as readonly unless truly so.
-            isReadOnly = false; // Prefer isDisabled = true over isReadOnly = true if both detected via isEditable.
+            isReadOnly = false;
             const actualReadOnly = await elementLocator.evaluate(
               (el) => (el as HTMLInputElement).readOnly
             );
@@ -421,7 +403,6 @@ export class PlaywrightController {
         }
       }
 
-      // Fallback to inputValue if data-mcp-value was not found
       if (
         currentValue === undefined &&
         (elementType.startsWith("input-") ||
@@ -435,14 +416,12 @@ export class PlaywrightController {
             "input-button",
             "input-submit",
             "input-reset",
-            "input-file", // inputValue for file is complex (fakepath)
+            "input-file",
           ].includes(elementType)
         ) {
           try {
-            // For select, inputValue returns the value of the selected option
             currentValue = await elementLocator.inputValue({ timeout });
           } catch (e: any) {
-            // Might fail if element is not input/textarea/select or other issues
             console.warn(
               `Could not retrieve inputValue for ${elementId} (type: ${elementType}): ${e.message}`
             );
@@ -495,28 +474,24 @@ export class PlaywrightController {
       if (customState !== undefined) state.customState = customState;
 
       const message = `Successfully retrieved state for element ${elementId}.`;
-      // console.log(message, state); // Avoid overly verbose logging for state
       return { success: true, message, data: state };
     } catch (error: any) {
       let errMessage = `Error getting state for element with ID ${elementId}.`;
-      console.error(errMessage, error); // Log the original generic message and the error object
-      let errorType: ActionErrorType = "StateRetrievalFailed";
+      console.error(errMessage, error);
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed; // Default, use imported Enum
 
       if (error.name === "TimeoutError") {
-        errorType = "Timeout";
-        // Specific message for timeout
+        errorType = PlaywrightErrorType.Timeout;
         errMessage = `Timeout waiting for element '${elementId}' to be ready for state retrieval. The element might be transitioning or not fully loaded.`;
-        // Add advice for LLM
         errMessage +=
           " Consider retrying the 'state' command after a brief pause, or use 'scan' to refresh the view.";
       } else if (error.message?.includes("not found")) {
-        errorType = "ElementNotFound";
+        errorType = PlaywrightErrorType.ElementNotFound;
         errMessage = `Get element state failed: Element with ID '${elementId}' not found.`;
       }
-      // The final message incorporates the more specific errMessage
       return {
         success: false,
-        message: `${errMessage} Details: ${error.message}`, // Keep original error details for context if needed
+        message: `${errMessage} Details: ${error.message}`,
         errorType,
         data: null,
       };
