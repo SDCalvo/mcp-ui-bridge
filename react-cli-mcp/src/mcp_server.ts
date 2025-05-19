@@ -317,7 +317,7 @@ console.log(
   "[MCP Server] SDK server and tools defined. Express routing configured."
 );
 
-async function initializeAndStartServer() {
+export async function initializeAndStartServer() {
   console.log("[Main] Initializing PlaywrightController and DomParser...");
   try {
     playwrightController = new PlaywrightController({ headless: false });
@@ -397,8 +397,3 @@ async function initializeAndStartServer() {
 // app.use(express.json()); // Will be moved into the next step with route definitions
 
 // End of Part 1. Routes and full server start in Part 2.
-
-initializeAndStartServer().catch((error) => {
-  console.error("[Main] Failed to initialize or start server:", error);
-  process.exit(1);
-});
