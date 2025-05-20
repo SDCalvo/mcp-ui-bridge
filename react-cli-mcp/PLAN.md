@@ -180,8 +180,6 @@ The `DomParser` currently:
     - [x] Adapt the `main.ts` logic or create a new entry point to act as an MCP server. _(New `mcp_server.ts` provides `runMcpServer`, and `src/main.ts` now correctly uses it as the entry point for `npm run start`)_
     - [x] Map `DomParser` output to `get_current_screen_actions` and `get_current_screen_data` responses. _(Implemented and successfully tested end-to-end)_
     - [x] Map `send_command` requests to `PlaywrightController` actions. _(Implemented for `click` and `type`, and successfully tested end-to-end including adding and deleting items)_
-  - [ ] **Task 3.3.3**: MCP Test Client
-    - [ ] Create a simple script or use an MCP client tool to send test messages to the `react-cli-mcp` server.
 
 - **Phase 3.4: Testing & Validation**
 
