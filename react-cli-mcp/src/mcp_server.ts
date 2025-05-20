@@ -1,6 +1,6 @@
 // Re-confirming mcp_server.ts content. The tsconfig.json is correct.
 // The primary suspect for 'Cannot find module ./core/types' is IDE/linter caching or state.
-console.log("[MCP Server] File loading... (v2)");
+console.log("[MCP Server] File loading... (v3 - With Output Schemas)");
 
 import express, { Request, Response } from "express";
 import http from "http";
@@ -12,31 +12,46 @@ import { z } from "zod";
 
 import { PlaywrightController } from "./core/playwright-controller.js";
 import { DomParser } from "./core/dom-parser.js";
-import { ActionResult, ParserResult } from "./core/types.js";
+import {
+  ActionResult,
+  ParserResult,
+  PlaywrightErrorType,
+  DomParserErrorType,
+} from "./core/types.js";
+import {
+  InteractiveElementInfo,
+  DisplayItem,
+  DisplayContainerInfo,
+  PageRegionInfo,
+  StatusMessageAreaInfo,
+  LoadingIndicatorInfo,
+} from "./types/index.js";
+
+// --- Zod Schema for send_command INPUT ---
+const SendCommandInputSchema = z.object({
+  command_string: z
+    .string()
+    .describe(
+      "The command string to execute. Format examples: 'click #elementId', 'type #elementId your text here'"
+    ),
+});
 
 // Define a local interface compatible with the SDK's expected tool result structure
-// Based on linter errors, content array should primarily contain specific known types like 'text'.
 interface McpToolResult {
-  content: { type: "text"; text: string }[]; // More specific to satisfy SDK
-  // We could add other specific SDK types like image, audio, resource if needed:
-  // | { type: "image"; data: string; mimeType: string }
-  // | { type: "audio"; data: string; mimeType: string }
-  // | { type: "resource"; resource: { uri: string; text?: string; mimeType?: string; blob?: string } }
-  structuredContent: Record<string, any>;
-  isError?: boolean; // Ensure this is here
-  [key: string]: any; // Add index signature to match SDK's CallToolResult flexibility
+  content: { type: "text"; text: string }[];
+  structuredContent?: Record<string, any>; // Make optional if not always present
+  isError?: boolean;
+  [key: string]: any;
 }
 
 const app = express();
 const PORT = process.env.MCP_PORT || 3000;
-const TARGET_APP_URL = process.env.TARGET_APP_URL || "http://localhost:5173"; // Added for MCP server
+const TARGET_APP_URL = process.env.TARGET_APP_URL || "http://localhost:5173";
 
-// --- Globals for Playwright and Parser ---
 let playwrightController: PlaywrightController | null = null;
 let domParser: DomParser | null = null;
-let currentSseTransport: SSEServerTransport | null = null; // Store the active transport
+let currentSseTransport: SSEServerTransport | null = null;
 
-// --- Initialize MCP Server with SDK ---
 console.log("[MCP Server] Initializing MCP Server with SDK...");
 const mcpServer = new McpServer(
   {
@@ -47,19 +62,25 @@ const mcpServer = new McpServer(
   },
   {
     capabilities: {
-      tools: {}, // Tools are registered using server.tool() below
+      tools: {},
       prompts: {},
       resources: {},
-      logging: {}, // Assuming an empty object satisfies the type if true/false is not direct.
+      logging: {},
     },
   }
 );
 
 // --- Define Tools using SDK ---
+// The SDK's server.tool() signature for providing input and output schemas is typically:
+// server.tool(name, { paramSchema?: ZodSchema, outputSchema?: ZodSchema, description?: string }, handler)
 
 mcpServer.tool(
   "get_current_screen_actions",
-  "Get all interactive elements and their state from the current screen.",
+  {
+    // paramSchema: z.object({}), // No input params
+    description:
+      "Get all interactive elements from the current screen. Output is a string, potentially JSON, detailing elements and their state. The exact format of the string will be LLM-readable.",
+  },
   async (callContext: any): Promise<McpToolResult> => {
     console.log(
       "[MCP Tool Call] get_current_screen_actions, Context:",
@@ -72,17 +93,23 @@ mcpServer.tool(
         isError: true,
       };
     }
-    const result: ParserResult<any[]> =
+    const result: ParserResult<InteractiveElementInfo[]> = // Ensure DomParser returns this type
       await domParser.getInteractiveElementsWithState();
+
     if (result.success && result.data) {
       return {
         content: [
           {
             type: "text",
-            text: `Found ${result.data.length} interactive elements.`,
+            text: `Found ${
+              result.data.length
+            } interactive elements. (Raw data: ${JSON.stringify(
+              result.data,
+              null,
+              2
+            )})`,
           },
         ],
-        structuredContent: { data: result.data },
         isError: false,
       };
     } else {
@@ -104,7 +131,11 @@ mcpServer.tool(
 
 mcpServer.tool(
   "get_current_screen_data",
-  "Get structured data content from the current screen.",
+  {
+    // paramSchema: z.object({}), // No input params
+    description:
+      "Get structured data content from the current screen. Output is a string, potentially JSON, detailing elements and their state. The exact format of the string will be LLM-readable.",
+  },
   async (callContext: any): Promise<McpToolResult> => {
     console.log(
       "[MCP Tool Call] get_current_screen_data, Context:",
@@ -117,13 +148,20 @@ mcpServer.tool(
         isError: true,
       };
     }
+    // Assuming domParser.getStructuredData() returns a structure compatible with StructuredDataSchema
     const result = await domParser.getStructuredData();
     if (result.success && result.data) {
       return {
         content: [
-          { type: "text", text: "Successfully retrieved screen data." },
+          {
+            type: "text",
+            text: `Successfully retrieved screen data. (Raw data: ${JSON.stringify(
+              result.data,
+              null,
+              2
+            )})`,
+          },
         ],
-        structuredContent: { data: result.data },
         isError: false,
       };
     } else {
@@ -143,29 +181,31 @@ mcpServer.tool(
   }
 );
 
-// Define the shape for send_command parameters
-const SendCommandZodSchema = z.object({
-  command_id: z
-    .string()
-    .describe(
-      "The unique ID of the command to execute (typically a selector)."
-    ),
-  action: z
-    .enum(["click", "type"])
-    .optional()
-    .describe(
-      "The action to perform (e.g., 'click', 'type'). Defaults to 'click' if not provided."
-    ),
-  text: z.string().optional().describe("Text to type if action is 'type'."),
-});
-
 mcpServer.tool(
   "send_command",
-  SendCommandZodSchema.shape, // Pass the raw shape
+  {
+    paramSchema: SendCommandInputSchema.shape,
+    description: `Sends a command to an element on the page. Input is a single command string. Examples: 
+- 'click #submitButton'
+- 'type #usernameField UserMcUserFace'
+- 'type #passwordField s3cr3tPa$$'
+Ensure selectors are valid CSS selectors, typically targeting 'data-mcp-interactive-element' values (e.g., '#elementId').`,
+  },
   async (
-    params: z.infer<typeof SendCommandZodSchema>
+    args: { [key: string]: any }, // Reverted to generic args for SDK compatibility
+    callContext?: any
   ): Promise<McpToolResult> => {
-    console.log("[MCP Tool Call] send_command, Params:", params);
+    // Explicitly parse command_string from generic args
+    const validatedParams = SendCommandInputSchema.parse(args);
+    const commandString = validatedParams.command_string;
+
+    console.log(
+      "[MCP Tool Call] send_command, String:",
+      commandString,
+      "Context:",
+      callContext
+    );
+
     if (!playwrightController) {
       return {
         content: [
@@ -174,74 +214,72 @@ mcpServer.tool(
             text: "Error: Playwright Controller not initialized.",
           },
         ],
-        structuredContent: { error: "Playwright Controller not initialized" },
         isError: true,
       };
     }
 
-    let actionResult: ActionResult;
-    const commandId = params.command_id;
-    const actionToPerform = params.action || "click";
-    const textToType = params.text;
+    // Basic parsing for command_string: "action target [value...]"
+    // This is a placeholder and should be made more robust.
+    const parts = commandString.trim().split(/\s+/);
+    const actionToPerform = parts[0]?.toLowerCase();
+    const commandId = parts[1]; // This is the selector
+    const textToType = parts.slice(2).join(" ");
 
-    switch (actionToPerform) {
-      case "click":
-        actionResult = await playwrightController.click(commandId);
-        break;
-      case "type":
-        if (typeof textToType === "string") {
-          actionResult = await playwrightController.type(commandId, textToType);
-        } else {
-          actionResult = {
-            success: false,
-            message:
-              "Error: Missing 'text' argument for 'type' action in send_command.",
-          };
-        }
-        break;
-      default:
-        actionResult = {
-          success: false,
-          message: `Invalid action: ${actionToPerform}`,
-        };
-    }
+    let actionResult: ActionResult<any>;
 
-    if (actionResult.success) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: actionResult.message || "Command executed successfully.",
-          },
-        ],
-        structuredContent: { success: true, message: actionResult.message },
-        isError: false,
+    if (!actionToPerform || !commandId) {
+      actionResult = {
+        success: false,
+        message:
+          "Error: Invalid command string format. Expected 'action target [value...]'. Example: 'click #myButton' or 'type #myInput text'.",
+        errorType: PlaywrightErrorType.InvalidInput, // Assuming you add this to your enum
       };
     } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: actionResult.message || "Failed to execute command.",
-          },
-        ],
-        structuredContent: {
-          success: false,
-          error: actionResult.message,
-          errorType: actionResult.errorType,
-        },
-        isError: true,
-      };
+      switch (actionToPerform) {
+        case "click":
+          actionResult = await playwrightController.click(commandId);
+          break;
+        case "type":
+          if (textToType) {
+            actionResult = await playwrightController.type(
+              commandId,
+              textToType
+            );
+          } else {
+            actionResult = {
+              success: false,
+              message:
+                "Error: Missing 'text' argument for 'type' action. Expected 'type target text'.",
+              errorType: PlaywrightErrorType.InvalidInput,
+            };
+          }
+          break;
+        default:
+          actionResult = {
+            success: false,
+            message: `Error: Unknown action '${actionToPerform}'. Supported actions: 'click', 'type'.`,
+            errorType: PlaywrightErrorType.InvalidInput,
+          };
+      }
     }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            actionResult.message ||
+            (actionResult.success ? "Command executed." : "Command failed."),
+        },
+      ],
+      isError: !actionResult.success,
+    };
   }
 );
 
-// --- Set up Express with MCP SSE Transport ---
 app.use(express.json());
-
 const ssePath = "/mcp/sse";
 const messagesPath = "/mcp/rpc";
-
 console.log(`[MCP Server] SSE endpoint will be at GET ${ssePath}`);
 console.log(
   `[MCP Server] RPC message endpoint will be at POST ${messagesPath}`
@@ -250,17 +288,13 @@ console.log(
 app.get(ssePath, (req: Request, res: Response) => {
   console.log(`[Express] GET ${ssePath} - Client connecting for SSE.`);
   const transport = new SSEServerTransport(messagesPath, res);
-  currentSseTransport = transport; // Store the transport
+  currentSseTransport = transport;
   mcpServer.connect(transport);
-
-  // Clean up transport on client disconnect
   req.on("close", () => {
     console.log(`[Express] GET ${ssePath} - SSE Client disconnected.`);
     if (currentSseTransport === transport) {
       currentSseTransport = null;
     }
-    // The SDK or McpServer might have its own disconnect logic for the transport
-    // mcpServer.disconnect(transport); // If such a method exists
   });
 });
 
@@ -270,18 +304,12 @@ app.post(messagesPath, async (req: Request, res: Response) => {
       req.body
     )}`
   );
-
   if (currentSseTransport) {
     try {
       console.log(
         "[Express] Forwarding RPC message to McpServer via SSEServerTransport.handlePostMessage."
       );
-      // Let the transport handle the POST message. It will process it and send the response via SSE.
-      // It also handles sending back an HTTP acknowledgement for the POST if necessary.
       await currentSseTransport.handlePostMessage(req, res, req.body);
-      // If handlePostMessage doesn't send an HTTP response, we might need to do it here.
-      // However, the example implies it handles the full interaction.
-      // Safely check if headers were already sent by handlePostMessage.
       if (!res.headersSent) {
         console.warn(
           "[Express] POST /mcp/rpc - handlePostMessage did not send HTTP response. Sending 202."
@@ -320,7 +348,7 @@ console.log(
 export async function initializeAndStartServer() {
   console.log("[Main] Initializing PlaywrightController and DomParser...");
   try {
-    playwrightController = new PlaywrightController({ headless: false });
+    playwrightController = new PlaywrightController({ headless: false }); // Changed to false for visibility
     const launchResult = await playwrightController.launch();
     if (!launchResult.success) {
       console.error(
@@ -330,24 +358,18 @@ export async function initializeAndStartServer() {
       process.exit(1);
     }
     console.log("[Main] Playwright launched successfully.");
-
-    // Navigate to the target application URL
     console.log(`[Main] Navigating to target application: ${TARGET_APP_URL}`);
     const navigateResult = await playwrightController.navigate(TARGET_APP_URL, {
-      waitUntil: "networkidle", // Or your preferred wait condition
+      waitUntil: "networkidle",
     });
-
     if (!navigateResult.success) {
       console.error(
         `[Main] Fatal error navigating to ${TARGET_APP_URL}:`,
         navigateResult.message
       );
-      // Decide if you want to exit or continue with a potentially blank/error page
-      // For now, we'll try to get the page anyway, but DomParser might not be useful.
     } else {
       console.log(`[Main] Successfully navigated to ${TARGET_APP_URL}.`);
     }
-
     const page = await playwrightController.getPage();
     if (page) {
       domParser = new DomParser(page);
@@ -355,8 +377,7 @@ export async function initializeAndStartServer() {
       console.warn(
         "[Main] Playwright page was not available after launch for DomParser."
       );
-      // Depending on strictness, you might throw an error or allow proceeding without domParser
-      domParser = new DomParser(null); // Allow DomParser to handle null page gracefully
+      domParser = new DomParser(null as any); // Allow DomParser to handle null page gracefully
     }
     console.log(
       "[Main] PlaywrightController and DomParser initialized (or attempted)."
@@ -369,12 +390,9 @@ export async function initializeAndStartServer() {
     process.exit(1);
   }
 
-  // Express app and HTTP server startup will be added here in the next step.
-  const httpServer = http.createServer(app); // app is currently empty, will be configured next
+  const httpServer = http.createServer(app);
   httpServer.listen(PORT, () => {
-    console.log(
-      `[Main] HTTP Server listening on port ${PORT}. MCP routes to be configured.`
-    );
+    console.log(`[Main] HTTP Server listening on port ${PORT}.`);
     console.log(`[Main] MCP Server using SDK is configured.`);
     console.log(`[Main] SSE Endpoint: http://localhost:${PORT}${ssePath}`);
     console.log(
@@ -393,7 +411,3 @@ export async function initializeAndStartServer() {
     });
   });
 }
-
-// app.use(express.json()); // Will be moved into the next step with route definitions
-
-// End of Part 1. Routes and full server start in Part 2.

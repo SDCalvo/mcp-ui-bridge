@@ -29,6 +29,7 @@ export enum PlaywrightErrorType {
   ActionFailed = "ActionFailed", // Generic action failure
   BrowserLaunchFailed = "BrowserLaunchFailed",
   BrowserCloseFailed = "BrowserCloseFailed",
+  InvalidInput = "InvalidInput", // Added new error type
   Unknown = "UnknownPlaywrightError",
 }
 
