@@ -176,10 +176,10 @@ The `DomParser` currently:
   - [ ] **Task 3.3.1**: Define MCP Message Schemas
     - [ ] Draft JSON schemas for `get_current_screen_actions`, `get_current_screen_data`, `send_command` (requests & responses). _(Partially addressed by structuring tool return JSON; formal schemas for client validation TBD)_
   - [x] **Task 3.3.2**: Implement MCP Layer
-    - [x] Create modules/classes for handling MCP communication. _(Achieved by refactoring `mcp_server.ts`)_
-    - [x] Adapt the `main.ts` logic or create a new entry point to act as an MCP server. _(New `mcp_server.ts` is the entry point)_
-    - [x] Map `DomParser` output to `get_current_screen_actions` and `get_current_screen_data` responses. _(Implemented and tested)_
-    - [x] Map `send_command` requests to `PlaywrightController` actions. _(Implemented for `click` and `type`, and tested)_
+    - [x] Create modules/classes for handling MCP communication. _(Achieved by refactoring `mcp_server.ts` into a configurable module)_
+    - [x] Adapt the `main.ts` logic or create a new entry point to act as an MCP server. _(New `mcp_server.ts` provides `runMcpServer`, and `src/main.ts` now correctly uses it as the entry point for `npm run start`)_
+    - [x] Map `DomParser` output to `get_current_screen_actions` and `get_current_screen_data` responses. _(Implemented and successfully tested end-to-end)_
+    - [x] Map `send_command` requests to `PlaywrightController` actions. _(Implemented for `click` and `type`, and successfully tested end-to-end including adding and deleting items)_
   - [ ] **Task 3.3.3**: MCP Test Client
     - [ ] Create a simple script or use an MCP client tool to send test messages to the `react-cli-mcp` server.
 
