@@ -10,6 +10,8 @@ import {
   ParserResult,
   PlaywrightErrorType,
 } from "./core/types.js";
+import { pathToFileURL } from "url";
+import { resolve } from "path";
 
 console.log("[mcp_server.ts] Initializing FastMCP server logic...");
 
@@ -508,7 +510,8 @@ async function gracefulShutdown(signal: string) {
 }
 
 // Only run main() if the script is executed directly
-if (require.main === module) {
+// ESM-compatible way to check if the script is the main module
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM")); // kill
   process.on("SIGQUIT", () => gracefulShutdown("SIGQUIT")); // Ctrl+\
