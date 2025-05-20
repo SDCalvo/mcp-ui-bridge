@@ -1,413 +1,453 @@
-// Re-confirming mcp_server.ts content. The tsconfig.json is correct.
-// The primary suspect for 'Cannot find module ./core/types' is IDE/linter caching or state.
-console.log("[MCP Server] File loading... (v3 - With Output Schemas)");
-
-import express, { Request, Response } from "express";
-import http from "http";
-// Use correct subpath imports based on SDK structure and package.json exports
-// Attempting to include .js extension directly for type resolution with nodenext
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { FastMCP } from "fastmcp";
 import { z } from "zod";
-
 import { PlaywrightController } from "./core/playwright-controller.js";
 import { DomParser } from "./core/dom-parser.js";
+import { Page } from "playwright";
+import { InteractiveElementInfo } from "./types/index.js";
 import {
   ActionResult,
   ParserResult,
   PlaywrightErrorType,
-  DomParserErrorType,
 } from "./core/types.js";
-import {
-  InteractiveElementInfo,
-  DisplayItem,
-  DisplayContainerInfo,
-  PageRegionInfo,
-  StatusMessageAreaInfo,
-  LoadingIndicatorInfo,
-} from "./types/index.js";
 
-// --- Zod Schema for send_command INPUT ---
-const SendCommandInputSchema = z.object({
+console.log("[mcp_server.ts] Initializing FastMCP server logic...");
+
+// --- Configuration ---
+const TARGET_URL = process.env.MCP_TARGET_URL || "http://localhost:5173";
+const HEADLESS_BROWSER =
+  (process.env.MCP_HEADLESS_BROWSER || "true").toLowerCase() === "true";
+const MCP_PORT = parseInt(process.env.MCP_PORT || "3000", 10);
+let MCP_SSE_ENDPOINT = process.env.MCP_SSE_ENDPOINT || "/mcp/sse";
+
+// Ensure MCP_SSE_ENDPOINT starts with a slash for FastMCP typings
+if (!MCP_SSE_ENDPOINT.startsWith("/")) {
+  MCP_SSE_ENDPOINT = "/" + MCP_SSE_ENDPOINT;
+}
+const finalSseEndpoint = MCP_SSE_ENDPOINT as `/${string}`;
+
+// --- Global Instances ---
+// These will be initialized by initializeBrowserAndDependencies
+let playwrightController: PlaywrightController | null = null;
+let domParser: DomParser | null = null;
+// page is not strictly needed globally if domParser is always used with its own page ref,
+// but playwrightController holds the page.
+
+// --- Initialization Function ---
+async function initializeBrowserAndDependencies(): Promise<void> {
+  console.log(
+    `[mcp_server.ts] Initializing PlaywrightController (Headless: ${HEADLESS_BROWSER})...`
+  );
+  playwrightController = new PlaywrightController({
+    headless: HEADLESS_BROWSER,
+  });
+
+  const launchResult = await playwrightController.launch();
+  if (!launchResult.success || !playwrightController.getPage()) {
+    console.error(
+      "[mcp_server.ts] CRITICAL: Failed to launch browser via PlaywrightController.",
+      launchResult.message
+    );
+    throw new Error(
+      `Failed to launch browser: ${launchResult.message || "Unknown error"}`
+    );
+  }
+  console.log("[mcp_server.ts] Playwright browser launched.");
+
+  const pageInstance = playwrightController.getPage();
+  if (!pageInstance) {
+    // This case should be covered by launchResult.success check, but good for type safety
+    console.error(
+      "[mcp_server.ts] CRITICAL: Page not available after successful browser launch."
+    );
+    throw new Error("Page not available after browser launch.");
+  }
+
+  console.log(`[mcp_server.ts] Navigating to target URL: ${TARGET_URL}...`);
+  const navResult = await playwrightController.navigate(TARGET_URL);
+  if (!navResult.success) {
+    console.error(
+      `[mcp_server.ts] CRITICAL: Failed to navigate to ${TARGET_URL}.`,
+      navResult.message
+    );
+    await playwrightController.close(); // Attempt to clean up
+    throw new Error(
+      `Failed to navigate to ${TARGET_URL}: ${
+        navResult.message || "Unknown error"
+      }`
+    );
+  }
+  console.log(`[mcp_server.ts] Successfully navigated to ${TARGET_URL}.`);
+
+  domParser = new DomParser(pageInstance);
+  console.log("[mcp_server.ts] DomParser initialized.");
+  console.log(
+    "[mcp_server.ts] Browser and dependencies initialized successfully."
+  );
+}
+
+// --- MCP Server Instance ---
+const server = new FastMCP({
+  name: "ReactCliConversorServer",
+  version: "1.0.2", // Incremented version
+  instructions:
+    "This server interacts with a React web application. Use get_current_screen_data to see the page, get_current_screen_actions for possible interactions, and send_command to perform actions like 'click #id' or 'type #id \"text\"'.",
+});
+
+// --- Tool Definitions ---
+
+// Get Current Screen Data Tool
+server.addTool({
+  name: "get_current_screen_data",
+  description:
+    "Gets the current structured data and interactive elements displayed on the screen.",
+  parameters: undefined,
+  execute: async () => {
+    if (
+      !domParser ||
+      !playwrightController ||
+      !playwrightController.getPage()
+    ) {
+      console.error(
+        "[mcp_server.ts] get_current_screen_data: DomParser or PlaywrightController not initialized."
+      );
+      return JSON.stringify({
+        success: false,
+        message: "Server components not initialized.",
+        errorType: PlaywrightErrorType.NotInitialized,
+      });
+    }
+    console.log("[mcp_server.ts] get_current_screen_data: Fetching data...");
+    try {
+      // Check for page navigation state (e.g. if page is closed)
+      if (playwrightController.getPage()?.isClosed()) {
+        return JSON.stringify({
+          success: false,
+          message: "Page is closed. Cannot retrieve screen data.",
+          errorType: PlaywrightErrorType.PageNotAvailable,
+        });
+      }
+
+      const structuredDataResult = await domParser.getStructuredData();
+      const interactiveElementsResult =
+        await domParser.getInteractiveElementsWithState();
+
+      return JSON.stringify({
+        success: true,
+        currentUrl: playwrightController.getPage()?.url(),
+        data: {
+          structuredData: structuredDataResult.data || {
+            containers: [],
+            regions: [],
+            statusMessages: [],
+            loadingIndicators: [],
+          },
+          interactiveElements: interactiveElementsResult.data || [],
+        },
+        parserMessages: {
+          structured: structuredDataResult.message,
+          interactive: interactiveElementsResult.message,
+        },
+      });
+    } catch (error: any) {
+      console.error("[mcp_server.ts] Error in get_current_screen_data:", error);
+      return JSON.stringify({
+        success: false,
+        message: `Error fetching screen data: ${error.message}`,
+        errorType: PlaywrightErrorType.ActionFailed,
+      });
+    }
+  },
+});
+
+// Get Current Screen Actions Tool
+server.addTool({
+  name: "get_current_screen_actions",
+  description:
+    "Gets a list of available actions based on interactive elements on the current screen.",
+  parameters: undefined,
+  execute: async () => {
+    if (
+      !domParser ||
+      !playwrightController ||
+      !playwrightController.getPage()
+    ) {
+      console.error(
+        "[mcp_server.ts] get_current_screen_actions: DomParser or PlaywrightController not initialized."
+      );
+      return JSON.stringify({
+        success: false,
+        message: "Server components not initialized.",
+        actions: [],
+        errorType: PlaywrightErrorType.NotInitialized,
+      });
+    }
+    console.log(
+      "[mcp_server.ts] get_current_screen_actions: Fetching actions..."
+    );
+
+    if (playwrightController.getPage()?.isClosed()) {
+      return JSON.stringify({
+        success: false,
+        message: "Page is closed. Cannot retrieve screen actions.",
+        errorType: PlaywrightErrorType.PageNotAvailable,
+        actions: [],
+      });
+    }
+
+    try {
+      const interactiveElementsResult =
+        await domParser.getInteractiveElementsWithState();
+      if (
+        !interactiveElementsResult.success ||
+        !interactiveElementsResult.data
+      ) {
+        return JSON.stringify({
+          success: false,
+          message: `Failed to get interactive elements: ${interactiveElementsResult.message}`,
+          actions: [],
+          errorType:
+            interactiveElementsResult.errorType ||
+            PlaywrightErrorType.ActionFailed,
+        });
+      }
+
+      const actions = interactiveElementsResult.data.map(
+        (el: InteractiveElementInfo) => {
+          let commandHint = "";
+          if (
+            el.elementType?.startsWith("input-") &&
+            el.elementType !== "input-button" &&
+            el.elementType !== "input-submit" &&
+            el.elementType !== "input-checkbox" &&
+            el.elementType !== "input-radio"
+          ) {
+            commandHint = `type #${el.id} "your text"`;
+          } else {
+            commandHint = `click #${el.id}`;
+          }
+          return {
+            id: el.id,
+            label: el.label,
+            elementType: el.elementType,
+            purpose: el.purpose,
+            commandHint: commandHint,
+            currentValue: el.currentValue,
+            isChecked: el.isChecked,
+            isDisabled: el.isDisabled,
+            isReadOnly: el.isReadOnly,
+          };
+        }
+      );
+
+      return JSON.stringify({ success: true, actions });
+    } catch (error: any) {
+      console.error(
+        "[mcp_server.ts] Error in get_current_screen_actions:",
+        error
+      );
+      return JSON.stringify({
+        success: false,
+        message: `Error fetching screen actions: ${error.message}`,
+        actions: [],
+        errorType: PlaywrightErrorType.ActionFailed,
+      });
+    }
+  },
+});
+
+// Send Command Tool - Using Zod for parameters
+const SendCommandParamsSchema = z.object({
   command_string: z
     .string()
     .describe(
-      "The command string to execute. Format examples: 'click #elementId', 'type #elementId your text here'"
+      "The command string to be executed, e.g., 'click #buttonId' or 'type #inputId \"your text\"' (ensure text is quoted if it contains spaces)"
     ),
 });
 
-// Define a local interface compatible with the SDK's expected tool result structure
-interface McpToolResult {
-  content: { type: "text"; text: string }[];
-  structuredContent?: Record<string, any>; // Make optional if not always present
-  isError?: boolean;
-  [key: string]: any;
-}
-
-const app = express();
-const PORT = process.env.MCP_PORT || 3000;
-const TARGET_APP_URL = process.env.TARGET_APP_URL || "http://localhost:5173";
-
-let playwrightController: PlaywrightController | null = null;
-let domParser: DomParser | null = null;
-let currentSseTransport: SSEServerTransport | null = null;
-
-console.log("[MCP Server] Initializing MCP Server with SDK...");
-const mcpServer = new McpServer(
-  {
-    name: "react-app-mcp-agent",
-    version: "1.0.0",
-    description:
-      "MCP server for interacting with a target React application via Playwright.",
-  },
-  {
-    capabilities: {
-      tools: {},
-      prompts: {},
-      resources: {},
-      logging: {},
-    },
-  }
-);
-
-// --- Define Tools using SDK ---
-// The SDK's server.tool() signature for providing input and output schemas is typically:
-// server.tool(name, { paramSchema?: ZodSchema, outputSchema?: ZodSchema, description?: string }, handler)
-
-mcpServer.tool(
-  "get_current_screen_actions",
-  {
-    // paramSchema: z.object({}), // No input params
-    description:
-      "Get all interactive elements from the current screen. Output is a string, potentially JSON, detailing elements and their state. The exact format of the string will be LLM-readable.",
-  },
-  async (callContext: any): Promise<McpToolResult> => {
-    console.log(
-      "[MCP Tool Call] get_current_screen_actions, Context:",
-      callContext
-    );
-    if (!domParser) {
-      return {
-        content: [{ type: "text", text: "Error: DOM Parser not initialized." }],
-        structuredContent: { error: "DOM Parser not initialized" },
-        isError: true,
-      };
-    }
-    const result: ParserResult<InteractiveElementInfo[]> = // Ensure DomParser returns this type
-      await domParser.getInteractiveElementsWithState();
-
-    if (result.success && result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Found ${
-              result.data.length
-            } interactive elements. (Raw data: ${JSON.stringify(
-              result.data,
-              null,
-              2
-            )})`,
-          },
-        ],
-        isError: false,
-      };
-    } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: result.message || "Failed to get screen actions.",
-          },
-        ],
-        structuredContent: {
-          error: result.message || "Failed to get screen actions.",
-        },
-        isError: true,
-      };
-    }
-  }
-);
-
-mcpServer.tool(
-  "get_current_screen_data",
-  {
-    // paramSchema: z.object({}), // No input params
-    description:
-      "Get structured data content from the current screen. Output is a string, potentially JSON, detailing elements and their state. The exact format of the string will be LLM-readable.",
-  },
-  async (callContext: any): Promise<McpToolResult> => {
-    console.log(
-      "[MCP Tool Call] get_current_screen_data, Context:",
-      callContext
-    );
-    if (!domParser) {
-      return {
-        content: [{ type: "text", text: "Error: DOM Parser not initialized." }],
-        structuredContent: { error: "DOM Parser not initialized" },
-        isError: true,
-      };
-    }
-    // Assuming domParser.getStructuredData() returns a structure compatible with StructuredDataSchema
-    const result = await domParser.getStructuredData();
-    if (result.success && result.data) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully retrieved screen data. (Raw data: ${JSON.stringify(
-              result.data,
-              null,
-              2
-            )})`,
-          },
-        ],
-        isError: false,
-      };
-    } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: result.message || "Failed to get screen data.",
-          },
-        ],
-        structuredContent: {
-          error: result.message || "Failed to get screen data.",
-        },
-        isError: true,
-      };
-    }
-  }
-);
-
-mcpServer.tool(
-  "send_command",
-  {
-    paramSchema: SendCommandInputSchema.shape,
-    description: `Sends a command to an element on the page. Input is a single command string. Examples: 
-- 'click #submitButton'
-- 'type #usernameField UserMcUserFace'
-- 'type #passwordField s3cr3tPa$$'
-Ensure selectors are valid CSS selectors, typically targeting 'data-mcp-interactive-element' values (e.g., '#elementId').`,
-  },
-  async (
-    args: { [key: string]: any }, // Reverted to generic args for SDK compatibility
-    callContext?: any
-  ): Promise<McpToolResult> => {
-    // Explicitly parse command_string from generic args
-    const validatedParams = SendCommandInputSchema.parse(args);
-    const commandString = validatedParams.command_string;
-
-    console.log(
-      "[MCP Tool Call] send_command, String:",
-      commandString,
-      "Context:",
-      callContext
-    );
-
-    if (!playwrightController) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Error: Playwright Controller not initialized.",
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    // Basic parsing for command_string: "action target [value...]"
-    // This is a placeholder and should be made more robust.
-    const parts = commandString.trim().split(/\s+/);
-    const actionToPerform = parts[0]?.toLowerCase();
-    const commandId = parts[1]; // This is the selector
-    const textToType = parts.slice(2).join(" ");
-
-    let actionResult: ActionResult<any>;
-
-    if (!actionToPerform || !commandId) {
-      actionResult = {
+server.addTool({
+  name: "send_command",
+  description:
+    "Sends a command to interact with the web page (e.g., click, type).",
+  parameters: SendCommandParamsSchema,
+  execute: async (args: z.infer<typeof SendCommandParamsSchema>) => {
+    if (!playwrightController || !playwrightController.getPage()) {
+      console.error(
+        "[mcp_server.ts] send_command: PlaywrightController not initialized or page not available."
+      );
+      return JSON.stringify({
         success: false,
-        message:
-          "Error: Invalid command string format. Expected 'action target [value...]'. Example: 'click #myButton' or 'type #myInput text'.",
-        errorType: PlaywrightErrorType.InvalidInput, // Assuming you add this to your enum
-      };
-    } else {
-      switch (actionToPerform) {
+        message: "PlaywrightController not initialized or page not available.",
+        errorType: PlaywrightErrorType.NotInitialized,
+      });
+    }
+    console.log(
+      `[mcp_server.ts] send_command: Received raw command_string: '${args.command_string}'`
+    );
+
+    if (playwrightController.getPage()?.isClosed()) {
+      return JSON.stringify({
+        success: false,
+        message: "Page is closed. Cannot send command.",
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      });
+    }
+
+    const commandParts = args.command_string.match(/(?:[^\s"]+|"[^"]*")+/g);
+
+    if (!commandParts || commandParts.length < 2) {
+      const msg = `Invalid command string format: '${args.command_string}'. Expected 'action #id [params...]'.`;
+      console.error(`[mcp_server.ts] send_command: ${msg}`);
+      return JSON.stringify({
+        success: false,
+        message: msg,
+        errorType: "InvalidCommandFormat",
+      });
+    }
+
+    const action = commandParts[0].toLowerCase();
+    const elementId = commandParts[1].startsWith("#")
+      ? commandParts[1].substring(1)
+      : commandParts[1];
+
+    let result: ActionResult;
+
+    try {
+      switch (action) {
         case "click":
-          actionResult = await playwrightController.click(commandId);
+          if (commandParts.length !== 2) {
+            const msg = `Invalid 'click' command format: '${args.command_string}'. Expected 'click #id'.`;
+            console.error(`[mcp_server.ts] send_command: ${msg}`);
+            return JSON.stringify({
+              success: false,
+              message: msg,
+              errorType: "InvalidCommandFormat",
+            });
+          }
+          console.log(
+            `[mcp_server.ts] Executing 'click' on element ID: ${elementId}`
+          );
+          result = await playwrightController.click(elementId);
           break;
         case "type":
-          if (textToType) {
-            actionResult = await playwrightController.type(
-              commandId,
-              textToType
-            );
-          } else {
-            actionResult = {
+          if (commandParts.length !== 3) {
+            const msg = `Invalid 'type' command format: '${args.command_string}'. Expected 'type #id "text"'.`;
+            console.error(`[mcp_server.ts] send_command: ${msg}`);
+            return JSON.stringify({
               success: false,
-              message:
-                "Error: Missing 'text' argument for 'type' action. Expected 'type target text'.",
-              errorType: PlaywrightErrorType.InvalidInput,
-            };
+              message: msg,
+              errorType: "InvalidCommandFormat",
+            });
           }
+          let textToType = commandParts[2];
+          if (textToType.startsWith('"') && textToType.endsWith('"')) {
+            textToType = textToType.substring(1, textToType.length - 1);
+          }
+          console.log(
+            `[mcp_server.ts] Executing 'type' in element ID: ${elementId} with text: "${textToType}"`
+          );
+          result = await playwrightController.type(elementId, textToType);
           break;
         default:
-          actionResult = {
+          const msg = `Unsupported action: '${action}'. Supported actions are 'click', 'type'.`;
+          console.error(`[mcp_server.ts] send_command: ${msg}`);
+          return JSON.stringify({
             success: false,
-            message: `Error: Unknown action '${actionToPerform}'. Supported actions: 'click', 'type'.`,
-            errorType: PlaywrightErrorType.InvalidInput,
-          };
+            message: msg,
+            errorType: "UnsupportedAction",
+          });
       }
-    }
-
-    return {
-      content: [
-        {
-          type: "text",
-          text:
-            actionResult.message ||
-            (actionResult.success ? "Command executed." : "Command failed."),
-        },
-      ],
-      isError: !actionResult.success,
-    };
-  }
-);
-
-app.use(express.json());
-const ssePath = "/mcp/sse";
-const messagesPath = "/mcp/rpc";
-console.log(`[MCP Server] SSE endpoint will be at GET ${ssePath}`);
-console.log(
-  `[MCP Server] RPC message endpoint will be at POST ${messagesPath}`
-);
-
-app.get(ssePath, (req: Request, res: Response) => {
-  console.log(`[Express] GET ${ssePath} - Client connecting for SSE.`);
-  const transport = new SSEServerTransport(messagesPath, res);
-  currentSseTransport = transport;
-  mcpServer.connect(transport);
-  req.on("close", () => {
-    console.log(`[Express] GET ${ssePath} - SSE Client disconnected.`);
-    if (currentSseTransport === transport) {
-      currentSseTransport = null;
-    }
-  });
-});
-
-app.post(messagesPath, async (req: Request, res: Response) => {
-  console.log(
-    `[Express] POST ${messagesPath} - Received RPC message: ${JSON.stringify(
-      req.body
-    )}`
-  );
-  if (currentSseTransport) {
-    try {
       console.log(
-        "[Express] Forwarding RPC message to McpServer via SSEServerTransport.handlePostMessage."
+        `[mcp_server.ts] Command '${action}' execution result:`,
+        result
       );
-      await currentSseTransport.handlePostMessage(req, res, req.body);
-      if (!res.headersSent) {
-        console.warn(
-          "[Express] POST /mcp/rpc - handlePostMessage did not send HTTP response. Sending 202."
-        );
-        res
-          .status(202)
-          .json({ message: "RPC acknowledged, response via SSE." });
-      }
-    } catch (error) {
+      return JSON.stringify(result);
+    } catch (error: any) {
       console.error(
-        "[Express] Error calling currentSseTransport.handlePostMessage:",
+        `[mcp_server.ts] Error executing command '${args.command_string}':`,
         error
       );
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ error: "Error processing RPC message via transport" });
-      }
+      return JSON.stringify({
+        success: false,
+        message: `Error during command execution: ${error.message}`,
+        errorType: PlaywrightErrorType.ActionFailed,
+      });
     }
-  } else {
-    console.error(
-      "[Express] No active SSE transport available to handle POST message."
-    );
-    if (!res.headersSent) {
-      res
-        .status(400)
-        .json({ error: "No active SSE transport for this request" });
-    }
-  }
+  },
 });
 
-console.log(
-  "[MCP Server] SDK server and tools defined. Express routing configured."
-);
-
-export async function initializeAndStartServer() {
-  console.log("[Main] Initializing PlaywrightController and DomParser...");
+// --- Main Execution Logic ---
+async function main() {
   try {
-    playwrightController = new PlaywrightController({ headless: false }); // Changed to false for visibility
-    const launchResult = await playwrightController.launch();
-    if (!launchResult.success) {
-      console.error(
-        "[Main] Fatal error during Playwright launch:",
-        launchResult.message
-      );
-      process.exit(1);
-    }
-    console.log("[Main] Playwright launched successfully.");
-    console.log(`[Main] Navigating to target application: ${TARGET_APP_URL}`);
-    const navigateResult = await playwrightController.navigate(TARGET_APP_URL, {
-      waitUntil: "networkidle",
-    });
-    if (!navigateResult.success) {
-      console.error(
-        `[Main] Fatal error navigating to ${TARGET_APP_URL}:`,
-        navigateResult.message
-      );
-    } else {
-      console.log(`[Main] Successfully navigated to ${TARGET_APP_URL}.`);
-    }
-    const page = await playwrightController.getPage();
-    if (page) {
-      domParser = new DomParser(page);
-    } else {
-      console.warn(
-        "[Main] Playwright page was not available after launch for DomParser."
-      );
-      domParser = new DomParser(null as any); // Allow DomParser to handle null page gracefully
-    }
+    console.log("[mcp_server.ts] Starting main execution...");
+    await initializeBrowserAndDependencies();
+
     console.log(
-      "[Main] PlaywrightController and DomParser initialized (or attempted)."
+      `[mcp_server.ts] Attempting to start FastMCP server with SSE transport on port ${MCP_PORT}, endpoint ${finalSseEndpoint}...`
+    );
+    server.start({
+      transportType: "sse",
+      sse: {
+        port: MCP_PORT,
+        endpoint: finalSseEndpoint,
+      },
+    });
+    console.log(
+      `[mcp_server.ts] FastMCP Server started successfully with SSE on port ${MCP_PORT}, endpoint ${finalSseEndpoint}.`
+    );
+    console.log(
+      `[mcp_server.ts] Target React app should be accessible at ${TARGET_URL}.`
     );
   } catch (error) {
     console.error(
-      "[Main] Fatal error during Playwright/DOM Parser initialization:",
+      "[mcp_server.ts] CRITICAL: Failed to initialize or start FastMCP server:",
       error
     );
+    if (playwrightController) {
+      console.log(
+        "[mcp_server.ts] Attempting to close Playwright browser due to error..."
+      );
+      await playwrightController.close().catch((closeError) => {
+        console.error(
+          "[mcp_server.ts] Error closing Playwright browser during cleanup:",
+          closeError
+        );
+      });
+    }
     process.exit(1);
   }
-
-  const httpServer = http.createServer(app);
-  httpServer.listen(PORT, () => {
-    console.log(`[Main] HTTP Server listening on port ${PORT}.`);
-    console.log(`[Main] MCP Server using SDK is configured.`);
-    console.log(`[Main] SSE Endpoint: http://localhost:${PORT}${ssePath}`);
-    console.log(
-      `[Main] RPC Messages POST Endpoint: http://localhost:${PORT}${messagesPath}`
-    );
-  });
-
-  process.on("SIGINT", async () => {
-    console.log("\n[Main] Shutting down MCP server...");
-    if (playwrightController) {
-      await playwrightController.close();
-    }
-    httpServer.close(() => {
-      console.log("[Main] Server closed.");
-      process.exit(0);
-    });
-  });
 }
+
+// Graceful shutdown
+let isShuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(
+    `\n[mcp_server.ts] Received ${signal}. Starting graceful shutdown...`
+  );
+
+  // FastMCP server itself doesn't have an explicit server.stop() in the version used by docs.
+  // We'll focus on cleaning up resources like Playwright.
+
+  if (playwrightController) {
+    console.log("[mcp_server.ts] Closing Playwright browser...");
+    try {
+      await playwrightController.close();
+      console.log("[mcp_server.ts] Playwright browser closed successfully.");
+    } catch (error) {
+      console.error("[mcp_server.ts] Error closing Playwright browser:", error);
+    }
+  }
+
+  console.log("[mcp_server.ts] Graceful shutdown completed. Exiting.");
+  process.exit(0);
+}
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM")); // kill
+process.on("SIGQUIT", () => gracefulShutdown("SIGQUIT")); // Ctrl+\
+
+main(); // Call the main async function
+
+// To ensure this file is treated as a module, especially if no other exports are present.
+export {};

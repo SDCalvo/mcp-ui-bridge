@@ -1,24 +1,13 @@
-import { initializeAndStartServer } from "./mcp_server.js";
+import "./mcp_server.js"; // This will execute mcp_server.js and start the server
 
-async function main() {
-  console.log("Starting react-cli-mcp tool with MCP server...");
+console.log("[main.ts] MCP server module loading initiated.");
 
-  try {
-    await initializeAndStartServer();
-    console.log("MCP Server initialization and start process completed.");
-    // The initializeAndStartServer function now handles its own lifecycle,
-    // including listening and graceful shutdown. So, main.ts mostly just kicks it off.
-  } catch (error) {
-    console.error("Failed to initialize and start the MCP server:", error);
-    process.exit(1);
-  }
+// The MCP server (mcp_server.js) now handles its own initialization and startup
+// when imported. No further action is needed in main.ts to start it.
 
-  // Graceful shutdown logic previously here is now handled within initializeAndStartServer
-  // in mcp_server.ts (e.g., process.on('SIGINT', ...)).
-  // main.ts can now be simpler as it delegates the server lifecycle.
-}
+// If there were other application-specific initializations that don't involve
+// the MCP server directly, they could go here.
+// For now, we'll keep it simple.
 
-main().catch((error) => {
-  console.error("Unhandled error in main function:", error);
-  process.exit(1);
-});
+// The process will stay alive because the MCP server started by mcp_server.js
+// is running.

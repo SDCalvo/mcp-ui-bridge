@@ -30,6 +30,7 @@ export enum PlaywrightErrorType {
   BrowserLaunchFailed = "BrowserLaunchFailed",
   BrowserCloseFailed = "BrowserCloseFailed",
   InvalidInput = "InvalidInput", // Added new error type
+  NotInitialized = "NotInitialized", // Added this
   Unknown = "UnknownPlaywrightError",
 }
 

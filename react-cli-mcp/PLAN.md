@@ -174,12 +174,12 @@ The `DomParser` currently:
 - **Phase 3.3: MCP Integration**
 
   - [ ] **Task 3.3.1**: Define MCP Message Schemas
-    - [ ] Draft JSON schemas for `get_current_screen_actions`, `get_current_screen_data`, `send_command` (requests & responses).
-  - [ ] **Task 3.3.2**: Implement MCP Layer
-    - [ ] Create modules/classes for handling MCP communication.
-    - [ ] Adapt the `main.ts` logic or create a new entry point to act as an MCP server.
-    - [ ] Map `DomParser` output to `get_current_screen_actions` and `get_current_screen_data` responses.
-    - [ ] Map `send_command` requests to `PlaywrightController` actions.
+    - [ ] Draft JSON schemas for `get_current_screen_actions`, `get_current_screen_data`, `send_command` (requests & responses). _(Partially addressed by structuring tool return JSON; formal schemas for client validation TBD)_
+  - [x] **Task 3.3.2**: Implement MCP Layer
+    - [x] Create modules/classes for handling MCP communication. _(Achieved by refactoring `mcp_server.ts`)_
+    - [x] Adapt the `main.ts` logic or create a new entry point to act as an MCP server. _(New `mcp_server.ts` is the entry point)_
+    - [x] Map `DomParser` output to `get_current_screen_actions` and `get_current_screen_data` responses. _(Implemented and tested)_
+    - [x] Map `send_command` requests to `PlaywrightController` actions. _(Implemented for `click` and `type`, and tested)_
   - [ ] **Task 3.3.3**: MCP Test Client
     - [ ] Create a simple script or use an MCP client tool to send test messages to the `react-cli-mcp` server.
 
@@ -274,23 +274,45 @@ The `DomParser` currently:
 
 ---
 
-## Progress Update (Reflects current state after review)
+## 10. Recent Progress & Next Steps (As of 2024-05-17)
 
-**Current Phase: Phase 3.2 (Refinement & Robustness)**
+**Recently Completed:**
 
-**Completed Tasks:**
+- **Functional MCP Server Implementation (`Phase 3.3`):**
+  - Successfully refactored `src/mcp_server.ts` to be a fully functional MCP server using `FastMCP` (TypeScript version).
+  - Integrated `PlaywrightController` to manage browser instances and interactions.
+  - Integrated `DomParser` to analyze the live DOM of the target React application based on `data-mcp-*` attributes.
+  - The `get_current_screen_data` tool now correctly fetches and returns structured data and interactive elements from the live web page.
+  - The `get_current_screen_actions` tool now correctly derives actionable commands and hints from the interactive elements.
+  - The `send_command` tool can now parse `click #id` and `type #id "text"` commands, execute them using `PlaywrightController`, and return the action's outcome.
+  - The server correctly launches Playwright, navigates to the target URL (configurable via `MCP_TARGET_URL`), and handles basic interactions.
+  - Tested end-to-end flow: MCP client calls tools -> MCP server interacts with React app via Playwright -> React app state changes -> MCP server reports new state.
 
-- **Task 3.1.1**: Project Setup (Node.js, TypeScript, Playwright, Inquirer, structure).
-- **Task 3.1.2**: `PlaywrightController` implementation (launch, navigate, click, type, get_state).
-- **Task 3.1.3**: `DomParser` implementation (parsing for interactive elements, display containers, items, fields, regions, status messages, loading indicators, with attribute/label/type inference).
-- **Task 3.1.4**: TypeScript types (`src/types/index.ts`) and attribute constants (`src/types/attributes.ts`) defined.
-- **Task 3.1.5**: Basic CLI in `src/main.ts` (scan, click, type, state, quit commands using inquirer).
-- **Task 3.1.6**: Initial manual testing with the Todo app.
+**Potential Next Steps:**
 
-**Next Tasks (Phase 3.2: Refinement & Robustness):**
+1.  **Refine Error Handling & Robustness in MCP Tools:**
+    - Further improve error reporting from tools, ensuring consistent error structures and types.
+    - Handle more edge cases in `send_command` parsing or Playwright interactions.
+2.  **Expand `send_command` Capabilities:**
+    - Consider adding support for other actions (e.g., `select #id "value"`, `scroll #id`, `hover #id`, `state #id` as a command if distinct from `getElementState` which is internal).
+    - Improve parsing for more complex parameters if needed.
+3.  **MCP Test Client (`Task 3.3.3`):**
+    - Develop a simple, dedicated MCP client script for more streamlined testing of the server, beyond the interactive tool usage here. This would help in automating test sequences.
+4.  **Formalize MCP Message Schemas (`Task 3.3.1`):**
+    - While FastMCP handles schema generation for tool parameters, consider documenting or even generating/exposing JSON schemas for the _return values_ of `get_current_screen_data` and `get_current_screen_actions` for client-side validation and type generation.
+5.  **Begin Unit and Integration Testing (`Phase 3.4`):**
+    - Start writing unit tests for the `DomParser` logic (especially attribute/label/type inference).
+    - Write unit tests for `PlaywrightController` methods (these might be more like integration tests depending on how they are mocked).
+    - Write integration tests for the MCP server tools, possibly using the test client mentioned above.
+6.  **Address `main.ts` (Original CLI):**
+    - The `PLAN.md` mentions `main.ts` as the previous CLI entry point. Decide on its future:
+      - Will it be deprecated in favor of only the MCP server?
+      - Will it be updated to _use_ the MCP server as a client for local CLI interaction/debugging?
+      - Or, will the `mcp_server.ts` become the sole entry point for the tool, perhaps with a command-line flag to enable an interactive diagnostic mode? (This aligns with `Phase 3.5, Task 3.4.1`).
+7.  **Documentation (`Task 3.4.4`):**
+    - Start documenting how to run the MCP server and connect a generic MCP client to it.
+    - Document the expected `data-mcp-*` attributes for React app developers.
+8.  **Configuration Improvements:**
+    - Consider a configuration file (e.g., JSON or YAML) for server settings (target URL, port, headless mode, timeouts) as an alternative or supplement to environment variables for easier management.
 
-- **Task 3.2.1**: Enhance `DomParser` and `PlaywrightController`:
-  - [x] Ensure full coverage of defined `data-mcp-*` attributes (element-type, element-state, value successfully tested).
-  - [x] Improve error handling, logging, and edge case management (Implemented `ActionResult`, `ParserResult`, better error categorization and messages, including retry suggestions for timeouts).
-
-Following this, we will proceed to **Phase 3.3: MCP Integration**.
+---
