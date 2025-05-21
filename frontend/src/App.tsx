@@ -1,12 +1,22 @@
 import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import TodoPage from "./pages/TodoPage";
-// import './App.css'; // We can remove or keep this if it has useful global styles not covered by index.css
+import TestFeaturesPage from "./pages/TestFeaturesPage";
+import Navbar from "./components/Navbar";
 
 const App: React.FC = () => {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 py-8 sm:py-12">
-      <TodoPage />
-    </div>
+    <Router>
+      <div className="d-flex flex-column min-vh-100">
+        <Navbar />
+        <main className="container flex-grow-1 py-4">
+          <Routes>
+            <Route path="/" element={<TodoPage />} />
+            <Route path="/test-features" element={<TestFeaturesPage />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
 };
 

@@ -31,6 +31,8 @@ export enum PlaywrightErrorType {
   BrowserCloseFailed = "BrowserCloseFailed",
   InvalidInput = "InvalidInput", // Added new error type
   NotInitialized = "NotInitialized", // Added this
+  OptionNotFound = "OptionNotFound", // For select/radio options not found
+  AttributeNotFound = "AttributeNotFound", // For when a required HTML attribute is missing (e.g., name for radio group)
   Unknown = "UnknownPlaywrightError",
 }
 

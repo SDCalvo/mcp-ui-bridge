@@ -10,40 +10,36 @@ const AttributeTest: React.FC = () => {
   };
 
   return (
-    <div className="mt-8 p-6 border rounded-lg shadow-md bg-gray-50">
-      <h2 className="text-xl font-semibold mb-4 text-gray-700">
-        MCP Attribute Test Area
-      </h2>
+    <div className="card shadow-sm">
+      <div className="card-body">
+        <h2 className="h5 card-title mb-3">MCP Attribute Test Area</h2>
 
-      <div className="space-y-4">
-        {/* Test 1: Explicit Element Type */}
-        <div
-          data-mcp-interactive-element="explicit-type-button"
-          data-mcp-element-type="custom-div-button" // Explicitly setting type
-          data-mcp-purpose="Acts as a button via div"
-          className="p-2 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-center"
-          onClick={() => alert("Explicit type button clicked!")}
-          role="button" // For accessibility
-          tabIndex={0} // For accessibility
-          onKeyDown={(e) =>
-            e.key === "Enter" && alert("Explicit type button clicked!")
-          }
-        >
-          Click Me (I'm a Div Button)
+        <div className="mb-3">
+          {/* Test 1: Explicit Element Type */}
+          <div
+            data-mcp-interactive-element="explicit-type-button"
+            data-mcp-element-type="custom-div-button" // Explicitly setting type
+            data-mcp-purpose="Acts as a button via div"
+            className="btn btn-info w-100 mb-2"
+            onClick={() => alert("Explicit type button clicked!")}
+            role="button" // For accessibility
+            tabIndex={0} // For accessibility
+            onKeyDown={(e) =>
+              e.key === "Enter" && alert("Explicit type button clicked!")
+            }
+          >
+            Click Me (I'm a Div Button)
+          </div>
         </div>
 
         {/* Test 2: Dynamic Element State */}
-        <div className="flex items-center space-x-3">
+        <div className="mb-3 d-flex align-items-center">
           <div
             data-mcp-interactive-element="stateful-toggle"
             data-mcp-element-state={isActive ? "active" : "inactive"} // Dynamic state
             data-mcp-purpose="Toggles a custom active/inactive state"
             onClick={handleToggle}
-            className={`p-2 rounded cursor-pointer text-white transition-colors text-center ${
-              isActive
-                ? "bg-green-500 hover:bg-green-600"
-                : "bg-red-500 hover:bg-red-600"
-            }`}
+            className={`btn w-100 ${isActive ? "btn-success" : "btn-warning"}`}
             role="switch" // For accessibility
             aria-checked={isActive} // For accessibility
             tabIndex={0} // For accessibility
@@ -51,19 +47,19 @@ const AttributeTest: React.FC = () => {
           >
             {isActive ? "State: ACTIVE" : "State: INACTIVE"} (Click to toggle)
           </div>
-          <span className="text-sm text-gray-600">
+          <span className="ms-2 text-muted small">
             (Clicked {toggleClicked} times)
           </span>
         </div>
 
         {/* Test 3: Explicit Value on a non-input */}
-        <div className="flex items-center space-x-3">
+        <div className="mb-3">
           <span
             data-mcp-interactive-element="explicit-value-span"
             data-mcp-element-type="display-text-with-value" // Custom type for clarity
             data-mcp-value="HelloMCP_ExplicitValue123" // Explicit value
             data-mcp-purpose="Displays text with an explicit MCP value"
-            className="p-2 bg-purple-100 text-purple-700 rounded border border-purple-300"
+            className="form-control-plaintext p-2 bg-light border rounded mb-2 d-block"
           >
             I'm a span with an explicit MCP value.
           </span>
@@ -75,7 +71,7 @@ const AttributeTest: React.FC = () => {
                 "Value of span (from JS perspective) is not directly readable here, but MCP tool should see data-mcp-value."
               )
             }
-            className="p-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+            className="btn btn-secondary w-100"
           >
             Test MCP Value Read
           </button>

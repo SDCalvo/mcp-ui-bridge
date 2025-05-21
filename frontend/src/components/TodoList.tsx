@@ -9,7 +9,7 @@ interface TodoListProps {
 const TodoList: React.FC<TodoListProps> = ({ todos }) => {
   if (!todos || todos.length === 0) {
     return (
-      <p className="text-center text-slate-500 dark:text-slate-400 py-8">
+      <p className="list-group-item text-muted text-center py-3">
         No todos yet. Add one above!
       </p>
     );
@@ -17,7 +17,7 @@ const TodoList: React.FC<TodoListProps> = ({ todos }) => {
 
   return (
     <ul
-      className="space-y-3"
+      className="list-group shadow-sm"
       data-mcp-display-container="todo-list"
       data-mcp-region="active-todos"
       data-mcp-purpose="display-todo-items"

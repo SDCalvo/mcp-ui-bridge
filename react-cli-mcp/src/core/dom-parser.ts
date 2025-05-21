@@ -176,13 +176,21 @@ export class DomParser {
           }
         }
 
-        // Fallback to inputValue if data-mcp-value was not found
-        if (currentValue === undefined && elementType.startsWith("input-")) {
+        // Enhanced state extraction based on element type
+        let options: InteractiveElementInfo["options"];
+        let radioName: string | undefined; // For grouping radio buttons
+
+        if (elementType.startsWith("input-")) {
           if (
             elementType === "input-checkbox" ||
             elementType === "input-radio"
           ) {
             isChecked = await elementHandle.isChecked();
+            if (elementType === "input-radio") {
+              // For radio buttons, also attempt to get the name attribute for grouping
+              radioName =
+                (await elementHandle.getAttribute("name")) || undefined;
+            }
           } else if (
             ![
               "input-button",
@@ -191,13 +199,44 @@ export class DomParser {
               "input-file",
             ].includes(elementType) // Exclude types that don't have inputValue or where it's not relevant
           ) {
+            if (currentValue === undefined) {
+              // Only try inputValue if data-mcp-value wasn't set
+              try {
+                currentValue = await elementHandle.inputValue();
+              } catch (e: any) {
+                console.warn(
+                  `Could not retrieve inputValue for ${elementId} (type: ${elementType}): ${e.message}`
+                );
+                currentValue = undefined;
+              }
+            }
+          }
+        } else if (elementType === "select") {
+          // For select elements, get options
+          const optionElements = await elementHandle.$$("option");
+          options = [];
+          for (const optionEl of optionElements) {
+            const value = (await optionEl.getAttribute("value")) || ""; // Default value to empty string if null
+            const text = (await optionEl.textContent()) || ""; // Default text to empty string if null
+            const selected = await optionEl.evaluate(
+              (el) => (el as HTMLOptionElement).selected
+            );
+            options.push({ value, text: text.trim(), selected });
+            // If this option is selected, its value becomes the currentValue of the select
+            if (selected && currentValue === undefined) {
+              // Prioritize data-mcp-value if set
+              currentValue = value;
+            }
+          }
+          // If no option is explicitly selected and data-mcp-value is not set,
+          // Playwright's inputValue on the select itself might give the current value.
+          if (currentValue === undefined) {
             try {
               currentValue = await elementHandle.inputValue();
             } catch (e: any) {
               console.warn(
-                `Could not retrieve inputValue for ${elementId} (type: ${elementType}): ${e.message}`
+                `Could not retrieve inputValue for select ${elementId}: ${e.message}`
               );
-              currentValue = undefined;
             }
           }
         }
@@ -237,6 +276,9 @@ export class DomParser {
 
         if (currentValue !== undefined) elementInfo.currentValue = currentValue;
         if (isChecked !== undefined) elementInfo.isChecked = isChecked;
+        if (options !== undefined) elementInfo.options = options;
+        if (radioName !== undefined && elementType === "input-radio")
+          elementInfo.radioGroup = radioName;
         if (purpose !== undefined) elementInfo.purpose = purpose;
         if (group !== undefined) elementInfo.group = group;
         if (controls !== undefined) elementInfo.controls = controls;
@@ -252,6 +294,17 @@ export class DomParser {
         if (isChecked !== undefined) logMessage += `, Checked: ${isChecked}`;
         if (currentValue !== undefined)
           logMessage += `, Value: "${currentValue}"`;
+        if (radioName !== undefined && elementType === "input-radio")
+          logMessage += `, RadioGroup: "${radioName}"`;
+        if (elementInfo.options) {
+          logMessage += `, Options: ${JSON.stringify(
+            elementInfo.options.map((o) => ({
+              value: o.value,
+              text: o.text,
+              selected: o.selected,
+            }))
+          )}`;
+        }
         if (isDisabled) logMessage += `, Disabled: true`;
         if (isReadOnly) logMessage += `, ReadOnly: true`;
         if (elementInfo.controls)

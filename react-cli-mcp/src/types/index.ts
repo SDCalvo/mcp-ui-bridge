@@ -3,14 +3,16 @@ export {};
 
 export interface InteractiveElementInfo {
   id: string; // Value of data-mcp-interactive-element
-  elementType: string; // e.g., 'button', 'input-text', 'input-checkbox'
+  elementType: string; // e.g., 'button', 'input-text', 'input-checkbox', 'select', 'input-radio'
   label: string; // Best available label (aria-label, textContent, placeholder, or id)
-  currentValue?: string; // For input fields
+  currentValue?: string; // For input fields, selected value of a select
   isChecked?: boolean; // For checkboxes/radio buttons
   isDisabled?: boolean; // From data-mcp-disabled or inferred
   isReadOnly?: boolean; // From data-mcp-readonly or inferred
   purpose?: string; // From data-mcp-purpose
   group?: string; // From data-mcp-group
+  radioGroup?: string; // From the 'name' attribute of a radio button, for grouping
+  options?: Array<{ value: string; text: string; selected?: boolean }>; // For select elements
   controls?: string; // From data-mcp-controls (ID of element it controls)
   updatesContainer?: string; // From data-mcp-updates-container (ID of container it updates)
   navigatesTo?: string; // From data-mcp-navigates-to (URL or view identifier)

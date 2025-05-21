@@ -198,7 +198,7 @@ export class PlaywrightController {
 
   async type(
     elementId: string,
-    textToType: string,
+    text: string,
     timeout: number = this.DEFAULT_TIMEOUT
   ): Promise<ActionResult> {
     // Renamed from typeInElement, uses imported ActionResult
@@ -209,11 +209,11 @@ export class PlaywrightController {
         success: false,
         message,
         errorType: PlaywrightErrorType.PageNotAvailable,
-      }; // Corrected ErrorType
+      };
     }
     const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
     console.log(
-      `Attempting to type "${textToType}" in element with ID: ${elementId} (selector: ${selector})`
+      `Attempting to type into element ID: ${elementId} (selector: ${selector}) with text: "${text}"`
     );
     try {
       const element = this.page.locator(selector).first();
@@ -224,37 +224,359 @@ export class PlaywrightController {
           success: false,
           message,
           errorType: PlaywrightErrorType.ElementNotFound,
-        }; // Uses imported Enum
+        };
       }
       await element.waitFor({ state: "visible", timeout });
-      if (!(await element.isEditable({ timeout }))) {
-        const message = `Type failed: Element with ID '${elementId}' is not editable.`;
+      await element.fill(text, { timeout }); // 'fill' is generally recommended over 'type' for inputs
+      const message = `Successfully typed "${text}" into element with ID: ${elementId}.`;
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error(`Error typing into element with ID ${elementId}:`, error);
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to type into element with ID '${elementId}'.`;
+
+      if (error.name === "TimeoutError") {
+        errorType = PlaywrightErrorType.Timeout;
+        errMessage = `Timeout waiting for element '${elementId}' to be ready for typing.`;
+      }
+      return {
+        success: false,
+        message: `${errMessage} Details: ${error.message}`,
+        errorType,
+      };
+    }
+  }
+
+  async selectOption(
+    elementId: string,
+    value: string,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = `Select option failed for element '${elementId}': Page not initialized.`;
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
+    console.log(
+      `Attempting to select option with value "${value}" in element ID: ${elementId} (selector: ${selector})`
+    );
+    try {
+      const element = this.page.locator(selector).first();
+      if ((await element.count()) === 0) {
+        const message = `Select option failed: Element with ID '${elementId}' not found.`;
         console.warn(message);
         return {
           success: false,
           message,
-          errorType: PlaywrightErrorType.ActionFailed,
-        }; // Or a more specific one
+          errorType: PlaywrightErrorType.ElementNotFound,
+        };
       }
-      await element.fill(textToType, { timeout });
-      const message = `Successfully typed "${textToType}" in element with ID: ${elementId}`;
+      await element.waitFor({ state: "visible", timeout });
+      await element.selectOption({ value }, { timeout });
+      const message = `Successfully selected option "${value}" in element with ID: ${elementId}.`;
       console.log(message);
       return { success: true, message };
     } catch (error: any) {
-      console.error(`Error typing in element with ID ${elementId}:`, error);
-      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed; // Uses imported Enum
-      let errMessage = `Failed to type in element with ID '${elementId}'.`;
-
+      console.error(
+        `Error selecting option in element with ID ${elementId}:`,
+        error
+      );
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to select option in element with ID '${elementId}'.`;
       if (error.name === "TimeoutError") {
         errorType = PlaywrightErrorType.Timeout;
-        errMessage = `Timeout waiting for element '${elementId}' to be visible or editable.`;
-      } else if (error.message?.toLowerCase().includes("not visible")) {
-        errorType = PlaywrightErrorType.ActionFailed; // Or a more specific one
-      } else if (
-        error.message?.toLowerCase().includes("not editable") ||
-        error.message?.toLowerCase().includes("disabled")
-      ) {
-        errorType = PlaywrightErrorType.ActionFailed; // Or a more specific one
+        errMessage = `Timeout waiting for element '${elementId}' or option '${value}'.`;
+      } else if (error.message?.includes("No option found for value")) {
+        errorType = PlaywrightErrorType.OptionNotFound;
+        errMessage = `Option with value '${value}' not found in element '${elementId}'.`;
+      }
+      return {
+        success: false,
+        message: `${errMessage} Details: ${error.message}`,
+        errorType,
+      };
+    }
+  }
+
+  async checkElement(
+    elementId: string,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = `Check element failed for '${elementId}': Page not initialized.`;
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
+    console.log(
+      `Attempting to check element ID: ${elementId} (selector: ${selector})`
+    );
+    try {
+      const element = this.page.locator(selector).first();
+      if ((await element.count()) === 0) {
+        const message = `Check element failed: Element with ID '${elementId}' not found.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        };
+      }
+      await element.waitFor({ state: "visible", timeout });
+      await element.check({ timeout });
+      const message = `Successfully checked element with ID: ${elementId}.`;
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error(`Error checking element with ID ${elementId}:`, error);
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to check element with ID '${elementId}'.`;
+      if (error.name === "TimeoutError") {
+        errorType = PlaywrightErrorType.Timeout;
+        errMessage = `Timeout waiting for element '${elementId}' to be checkable.`;
+      }
+      return {
+        success: false,
+        message: `${errMessage} Details: ${error.message}`,
+        errorType,
+      };
+    }
+  }
+
+  async uncheckElement(
+    elementId: string,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = `Uncheck element failed for '${elementId}': Page not initialized.`;
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
+    console.log(
+      `Attempting to uncheck element ID: ${elementId} (selector: ${selector})`
+    );
+    try {
+      const element = this.page.locator(selector).first();
+      if ((await element.count()) === 0) {
+        const message = `Uncheck element failed: Element with ID '${elementId}' not found.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        };
+      }
+      await element.waitFor({ state: "visible", timeout });
+      await element.uncheck({ timeout });
+      const message = `Successfully unchecked element with ID: ${elementId}.`;
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error(`Error unchecking element with ID ${elementId}:`, error);
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to uncheck element with ID '${elementId}'.`;
+      if (error.name === "TimeoutError") {
+        errorType = PlaywrightErrorType.Timeout;
+        errMessage = `Timeout waiting for element '${elementId}' to be uncheckable.`;
+      }
+      return {
+        success: false,
+        message: `${errMessage} Details: ${error.message}`,
+        errorType,
+      };
+    }
+  }
+
+  async selectRadioButton(
+    radioButtonIdInGroup: string,
+    valueToSelect: string,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = `Select radio button failed for group associated with '${radioButtonIdInGroup}': Page not initialized.`;
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+
+    const groupMemberSelector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${radioButtonIdInGroup}"]`;
+    console.log(
+      `Attempting to select radio button with value "${valueToSelect}" in group identified by element ID: ${radioButtonIdInGroup}`
+    );
+
+    try {
+      const groupMemberElement = this.page.locator(groupMemberSelector).first();
+      if ((await groupMemberElement.count()) === 0) {
+        const message = `Select radio button failed: Initial element with ID '${radioButtonIdInGroup}' not found.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        };
+      }
+      await groupMemberElement.waitFor({ state: "visible", timeout });
+
+      const radioGroupName = await groupMemberElement.getAttribute("name");
+      if (!radioGroupName) {
+        const message = `Select radio button failed: Element with ID '${radioButtonIdInGroup}' does not have a 'name' attribute for grouping.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.AttributeNotFound,
+        };
+      }
+
+      // Selector for the specific radio button in the group with the target value
+      const targetRadioSelector = `input[type="radio"][name="${radioGroupName}"][value="${valueToSelect}"]`;
+      const targetRadioElement = this.page.locator(targetRadioSelector).first();
+
+      if ((await targetRadioElement.count()) === 0) {
+        const message = `Select radio button failed: Radio button with name '${radioGroupName}' and value '${valueToSelect}' not found.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.OptionNotFound, // Reusing for radio options
+        };
+      }
+
+      // It's possible the target radio button itself doesn't have the data-mcp-interactive-element attribute,
+      // but it's part of the group. We identify the group by one member that *does* have the mcp id.
+      // We click the one that matches the name and value.
+      await targetRadioElement.waitFor({ state: "visible", timeout });
+      await targetRadioElement.click({ timeout }); // Could also use .check()
+
+      const message = `Successfully selected radio button with value "${valueToSelect}" in group "${radioGroupName}".`;
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error(
+        `Error selecting radio button for group associated with ID ${radioButtonIdInGroup}, value ${valueToSelect}:`,
+        error
+      );
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to select radio button.`;
+      if (error.name === "TimeoutError") {
+        errorType = PlaywrightErrorType.Timeout;
+        errMessage = `Timeout waiting for radio button elements.`;
+      }
+      return {
+        success: false,
+        message: `${errMessage} Details: ${error.message}`,
+        errorType,
+      };
+    }
+  }
+
+  async hoverElement(
+    elementId: string,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = `Hover failed for element '${elementId}': Page not initialized.`;
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
+    console.log(
+      `Attempting to hover over element ID: ${elementId} (selector: ${selector})`
+    );
+    try {
+      const element = this.page.locator(selector).first();
+      if ((await element.count()) === 0) {
+        const message = `Hover failed: Element with ID '${elementId}' not found.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        };
+      }
+      await element.waitFor({ state: "visible", timeout });
+      await element.hover({ timeout });
+      const message = `Successfully hovered over element with ID: ${elementId}.`;
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error(`Error hovering over element with ID ${elementId}:`, error);
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to hover over element with ID '${elementId}'.`;
+      if (error.name === "TimeoutError") {
+        errorType = PlaywrightErrorType.Timeout;
+        errMessage = `Timeout waiting for element '${elementId}' to be hoverable.`;
+      }
+      return {
+        success: false,
+        message: `${errMessage} Details: ${error.message}`,
+        errorType,
+      };
+    }
+  }
+
+  async clearElement(
+    elementId: string,
+    timeout: number = this.DEFAULT_TIMEOUT
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = `Clear failed for element '${elementId}': Page not initialized.`;
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    const selector = `[${DataAttributes.INTERACTIVE_ELEMENT}="${elementId}"]`;
+    console.log(
+      `Attempting to clear element ID: ${elementId} (selector: ${selector})`
+    );
+    try {
+      const element = this.page.locator(selector).first();
+      if ((await element.count()) === 0) {
+        const message = `Clear failed: Element with ID '${elementId}' not found.`;
+        console.warn(message);
+        return {
+          success: false,
+          message,
+          errorType: PlaywrightErrorType.ElementNotFound,
+        };
+      }
+      await element.waitFor({ state: "visible", timeout });
+      await element.fill("", { timeout }); // Using fill with empty string to clear
+      const message = `Successfully cleared element with ID: ${elementId}.`;
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      console.error(`Error clearing element with ID ${elementId}:`, error);
+      let errorType: PlaywrightErrorType = PlaywrightErrorType.ActionFailed;
+      let errMessage = `Failed to clear element with ID '${elementId}'.`;
+      if (error.name === "TimeoutError") {
+        errorType = PlaywrightErrorType.Timeout;
+        errMessage = `Timeout waiting for element '${elementId}' to be clearable.`;
       }
       return {
         success: false,

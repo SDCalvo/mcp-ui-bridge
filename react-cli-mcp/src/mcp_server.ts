@@ -214,31 +214,147 @@ function addCoreTools(mcpServer: FastMCP) {
           });
         }
 
-        const actions = interactiveElementsResult.data.map(
+        const actions = interactiveElementsResult.data.flatMap(
           (el: InteractiveElementInfo) => {
-            let commandHint = "";
+            const generatedActions: any[] = [];
+
+            // Default click action for many elements
             if (
-              el.elementType?.startsWith("input-") &&
-              el.elementType !== "input-button" &&
-              el.elementType !== "input-submit" &&
-              el.elementType !== "input-checkbox" &&
-              el.elementType !== "input-radio"
+              el.elementType === "button" ||
+              el.elementType === "input-button" ||
+              el.elementType === "input-submit" ||
+              el.elementType === "a" ||
+              !el.elementType?.startsWith("input-")
             ) {
-              commandHint = `type #${el.id} "your text"`;
-            } else {
-              commandHint = `click #${el.id}`;
+              generatedActions.push({
+                id: el.id,
+                label: el.label,
+                elementType: el.elementType,
+                purpose: el.purpose,
+                commandHint: `click #${el.id}`,
+                currentValue: el.currentValue,
+                isChecked: el.isChecked,
+                isDisabled: el.isDisabled,
+                isReadOnly: el.isReadOnly,
+              });
             }
-            return {
-              id: el.id,
-              label: el.label,
-              elementType: el.elementType,
-              purpose: el.purpose,
-              commandHint: commandHint,
-              currentValue: el.currentValue,
-              isChecked: el.isChecked,
-              isDisabled: el.isDisabled,
-              isReadOnly: el.isReadOnly,
-            };
+
+            // Type action for text inputs
+            if (
+              (el.elementType?.startsWith("input-") &&
+                ![
+                  "input-button",
+                  "input-submit",
+                  "input-checkbox",
+                  "input-radio",
+                  "input-file",
+                ].includes(el.elementType)) ||
+              el.elementType === "textarea"
+            ) {
+              generatedActions.push({
+                id: el.id,
+                label: el.label,
+                elementType: el.elementType,
+                purpose: el.purpose,
+                commandHint: `type #${el.id} "your text"`,
+                currentValue: el.currentValue,
+                isDisabled: el.isDisabled,
+                isReadOnly: el.isReadOnly,
+              });
+              // Clear action for text inputs with content
+              if (el.currentValue) {
+                generatedActions.push({
+                  id: el.id,
+                  label: el.label,
+                  elementType: el.elementType,
+                  purpose: el.purpose,
+                  commandHint: `clear #${el.id} (Clear input '${el.label}')`,
+                  currentValue: el.currentValue, // Keep other info for context
+                  isDisabled: el.isDisabled,
+                  isReadOnly: el.isReadOnly,
+                });
+              }
+            }
+
+            // Check/Uncheck for checkboxes
+            if (el.elementType === "input-checkbox") {
+              if (el.isChecked) {
+                generatedActions.push({
+                  id: el.id,
+                  label: el.label,
+                  elementType: el.elementType,
+                  purpose: el.purpose,
+                  commandHint: `uncheck #${el.id} (Uncheck '${el.label}')`,
+                  currentValue: el.currentValue,
+                  isChecked: el.isChecked,
+                  isDisabled: el.isDisabled,
+                  isReadOnly: el.isReadOnly,
+                });
+              } else {
+                generatedActions.push({
+                  id: el.id,
+                  label: el.label,
+                  elementType: el.elementType,
+                  purpose: el.purpose,
+                  commandHint: `check #${el.id} (Check '${el.label}')`,
+                  currentValue: el.currentValue,
+                  isChecked: el.isChecked,
+                  isDisabled: el.isDisabled,
+                  isReadOnly: el.isReadOnly,
+                });
+              }
+            }
+
+            // Choose for radio buttons
+            if (el.elementType === "input-radio") {
+              generatedActions.push({
+                id: el.id, // Use the specific radio button's ID for the hint
+                label: el.label,
+                elementType: el.elementType,
+                purpose: el.purpose,
+                commandHint: `choose #${el.id} "${el.currentValue}" (Choose '${el.label}')`,
+                currentValue: el.currentValue,
+                isChecked: el.isChecked, // Important for client to know which is selected
+                isDisabled: el.isDisabled,
+                isReadOnly: el.isReadOnly,
+                radioGroup: el.radioGroup,
+              });
+            }
+
+            // Select for select elements
+            if (el.elementType === "select" && el.options) {
+              el.options.forEach((option) => {
+                generatedActions.push({
+                  id: el.id,
+                  label: el.label, // Label of the select element
+                  elementType: el.elementType,
+                  purpose: el.purpose,
+                  commandHint: `select #${el.id} "${option.value}" (Selects '${option.text}')`,
+                  currentValue: el.currentValue, // Current value of the select
+                  optionValue: option.value, // Specific option value for this action
+                  optionText: option.text, // Specific option text for this action
+                  isDisabled: el.isDisabled,
+                  isReadOnly: el.isReadOnly,
+                });
+              });
+            }
+
+            // Hover action for all interactive elements (if not disabled)
+            if (!el.isDisabled) {
+              generatedActions.push({
+                id: el.id,
+                label: el.label,
+                elementType: el.elementType,
+                purpose: el.purpose,
+                commandHint: `hover #${el.id} (Hover over '${el.label}')`,
+                currentValue: el.currentValue,
+                isChecked: el.isChecked,
+                isDisabled: el.isDisabled,
+                isReadOnly: el.isReadOnly,
+              });
+            }
+
+            return generatedActions;
           }
         );
 
@@ -270,7 +386,7 @@ function addCoreTools(mcpServer: FastMCP) {
   mcpServer.addTool({
     name: "send_command",
     description:
-      "Sends a command to interact with the web page (e.g., click, type).",
+      "Sends a command to interact with the web page (e.g., click, type, select, check, uncheck, choose, hover, clear).",
     parameters: SendCommandParamsSchema,
     execute: async (args: z.infer<typeof SendCommandParamsSchema>) => {
       if (!playwrightController || !playwrightController.getPage()) {
@@ -351,8 +467,121 @@ function addCoreTools(mcpServer: FastMCP) {
             );
             result = await playwrightController.type(elementId, textToType);
             break;
+          case "select":
+            if (commandParts.length !== 3) {
+              const msg = `Invalid 'select' command format: '${args.command_string}'. Expected 'select #id "value"'.`;
+              console.error(`[mcp_server.ts] send_command: ${msg}`);
+              return JSON.stringify({
+                success: false,
+                message: msg,
+                errorType: "InvalidCommandFormat",
+              });
+            }
+            let valueToSelect = commandParts[2];
+            if (valueToSelect.startsWith('"') && valueToSelect.endsWith('"')) {
+              valueToSelect = valueToSelect.substring(
+                1,
+                valueToSelect.length - 1
+              );
+            }
+            console.log(
+              `[mcp_server.ts] Executing 'select' on element ID: ${elementId} with value: "${valueToSelect}"`
+            );
+            result = await playwrightController.selectOption(
+              elementId,
+              valueToSelect
+            );
+            break;
+          case "check":
+            if (commandParts.length !== 2) {
+              const msg = `Invalid 'check' command format: '${args.command_string}'. Expected 'check #id'.`;
+              console.error(`[mcp_server.ts] send_command: ${msg}`);
+              return JSON.stringify({
+                success: false,
+                message: msg,
+                errorType: "InvalidCommandFormat",
+              });
+            }
+            console.log(
+              `[mcp_server.ts] Executing 'check' on element ID: ${elementId}`
+            );
+            result = await playwrightController.checkElement(elementId);
+            break;
+          case "uncheck":
+            if (commandParts.length !== 2) {
+              const msg = `Invalid 'uncheck' command format: '${args.command_string}'. Expected 'uncheck #id'.`;
+              console.error(`[mcp_server.ts] send_command: ${msg}`);
+              return JSON.stringify({
+                success: false,
+                message: msg,
+                errorType: "InvalidCommandFormat",
+              });
+            }
+            console.log(
+              `[mcp_server.ts] Executing 'uncheck' on element ID: ${elementId}`
+            );
+            result = await playwrightController.uncheckElement(elementId);
+            break;
+          case "choose": // For radio buttons
+            if (commandParts.length !== 3) {
+              const msg = `Invalid 'choose' command format: '${args.command_string}'. Expected 'choose #radio_button_id "value"'.`;
+              console.error(`[mcp_server.ts] send_command: ${msg}`);
+              return JSON.stringify({
+                success: false,
+                message: msg,
+                errorType: "InvalidCommandFormat",
+              });
+            }
+            let radioValueToChoose = commandParts[2];
+            if (
+              radioValueToChoose.startsWith('"') &&
+              radioValueToChoose.endsWith('"')
+            ) {
+              radioValueToChoose = radioValueToChoose.substring(
+                1,
+                radioValueToChoose.length - 1
+              );
+            }
+            console.log(
+              `[mcp_server.ts] Executing 'choose' for radio group associated with ID: ${elementId} with value: "${radioValueToChoose}"`
+            );
+            result = await playwrightController.selectRadioButton(
+              elementId,
+              radioValueToChoose
+            );
+            break;
+          case "hover":
+            if (commandParts.length !== 2) {
+              const msg = `Invalid 'hover' command format: '${args.command_string}'. Expected 'hover #id'.`;
+              console.error(`[mcp_server.ts] send_command: ${msg}`);
+              return JSON.stringify({
+                success: false,
+                message: msg,
+                errorType: "InvalidCommandFormat",
+              });
+            }
+            console.log(
+              `[mcp_server.ts] Executing 'hover' on element ID: ${elementId}`
+            );
+            result = await playwrightController.hoverElement(elementId);
+            break;
+          case "clear":
+            if (commandParts.length !== 2) {
+              const msg = `Invalid 'clear' command format: '${args.command_string}'. Expected 'clear #id'.`;
+              console.error(`[mcp_server.ts] send_command: ${msg}`);
+              return JSON.stringify({
+                success: false,
+                message: msg,
+                errorType: "InvalidCommandFormat",
+              });
+            }
+            console.log(
+              `[mcp_server.ts] Executing 'clear' on element ID: ${elementId}`
+            );
+            result = await playwrightController.clearElement(elementId);
+            break;
           default:
-            const msg = `Unsupported action: '${action}'. Supported actions are 'click', 'type'.`;
+            const msg = `Unsupported action: '${action}'. Supported actions are 'click', 'type', 'select', 'check', 'uncheck', 'choose', 'hover', 'clear'.`;
             console.error(`[mcp_server.ts] send_command: ${msg}`);
             return JSON.stringify({
               success: false,
