@@ -374,6 +374,65 @@ function addCoreTools(mcpServer: FastMCP) {
     },
   });
 
+  // Get Page Screenshot Tool
+  /*
+  mcpServer.addTool({
+    name: "get_page_screenshot",
+    description:
+      "Captures a screenshot of the current web page and returns it as a Base64 encoded string.",
+    parameters: undefined,
+    execute: async () => {
+      if (!playwrightController || !playwrightController.getPage()) {
+        console.error(
+          "[mcp_server.ts] get_page_screenshot: PlaywrightController not initialized or page not available."
+        );
+        return JSON.stringify({
+          success: false,
+          message:
+            "PlaywrightController not initialized or page not available.",
+          errorType: PlaywrightErrorType.NotInitialized,
+        });
+      }
+      console.log(
+        "[mcp_server.ts] get_page_screenshot: Capturing screenshot..."
+      );
+
+      const page = playwrightController.getPage();
+      if (!page || page.isClosed()) {
+        return JSON.stringify({
+          success: false,
+          message: "Page is closed. Cannot capture screenshot.",
+          errorType: PlaywrightErrorType.PageNotAvailable,
+        });
+      }
+
+      try {
+        const screenshotBuffer = await page.screenshot({
+          type: "png", // Specify type for clarity, default is png
+          // fullPage: true, // Consider if full page is needed or just viewport
+        });
+        const screenshotData = `data:image/png;base64,${screenshotBuffer.toString(
+          "base64"
+        )}`;
+
+        return JSON.stringify({
+          success: true,
+          message: "Screenshot captured successfully.",
+          screenshotData: screenshotData,
+          format: "png",
+        });
+      } catch (error: any) {
+        console.error("[mcp_server.ts] Error in get_page_screenshot:", error);
+        return JSON.stringify({
+          success: false,
+          message: `Error capturing screenshot: ${error.message}`,
+          errorType: PlaywrightErrorType.ActionFailed,
+        });
+      }
+    },
+  });
+  */
+
   // Send Command Tool - Using Zod for parameters
   const SendCommandParamsSchema = z.object({
     command_string: z
@@ -623,7 +682,7 @@ export async function runMcpServer(options: McpServerOptions): Promise<void> {
       version: options.serverVersion || "1.0.3", // Default to a valid X.Y.Z format
       instructions:
         options.serverInstructions ||
-        "This server interacts with a React web application. Use get_current_screen_data to see the page, get_current_screen_actions for possible interactions, and send_command to perform actions like 'click #id' or 'type #id \"text\"'.",
+        "This server interacts with a React web application. Use get_current_screen_data to see the page, get_current_screen_actions for possible interactions, get_page_screenshot to get a visual of the page, and send_command to perform actions like 'click #id' or 'type #id \"text\"'.",
     });
 
     addCoreTools(server); // Add the defined tools to this server instance
