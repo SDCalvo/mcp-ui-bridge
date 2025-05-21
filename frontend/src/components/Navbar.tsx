@@ -58,6 +58,17 @@ const Navbar: React.FC = () => {
                 Test Features
               </Link>
             </li>
+            <li className="nav-item">
+              <Link
+                to="/profile"
+                className="nav-link text-white"
+                data-mcp-interactive-element="nav-link-profile"
+                data-mcp-element-label="View User Profile"
+                data-mcp-navigates-to="/profile"
+              >
+                Profile
+              </Link>
+            </li>
           </ul>
         </div>
       </div>

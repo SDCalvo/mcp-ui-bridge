@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import TodoPage from "./pages/TodoPage";
 import TestFeaturesPage from "./pages/TestFeaturesPage";
+import UserProfilePage from "./pages/UserProfilePage";
 import Navbar from "./components/Navbar";
 
 const App: React.FC = () => {
@@ -13,6 +14,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<TodoPage />} />
             <Route path="/test-features" element={<TestFeaturesPage />} />
+            <Route path="/profile" element={<UserProfilePage />} />
           </Routes>
         </main>
       </div>
