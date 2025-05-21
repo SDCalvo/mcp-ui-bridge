@@ -2,7 +2,7 @@ import {
   runMcpServer,
   McpServerOptions,
   ClientAuthContext,
-} from "react-cli-mcp";
+} from "mcp-ui-bridge";
 
 async function main() {
   console.log("Starting MCP External Server...");
