@@ -338,6 +338,7 @@ Once all necessary components are running (Frontend, Backend (if any), and `mcp-
   - `send_command`: Executes actions like `click`, `type`, `select`, `check`, `uncheck`, `choose` (radio), `hover`, `clear`.
 - **Configurable:** Supports environment variables and programmatic options for server settings.
 - **ES Module Compatible.**
+- **Client Authentication Hook:** Supports custom asynchronous authentication logic (`authenticateClient` in `McpServerOptions`) at the connection level, allowing validation of clients (e.g., via API keys in headers) before establishing an MCP session.
 
 ## Roadmap & Future Work (Key Items from `PLAN.md`)
 
