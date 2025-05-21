@@ -1,5 +1,8 @@
 # `mcp-ui-bridge`: LLM-Oriented Web Accessibility Bridge
 
+[![npm version](https://badge.fury.io/js/mcp-ui-bridge.svg)](https://badge.fury.io/js/mcp-ui-bridge)
+[View on npm](https://www.npmjs.com/package/mcp-ui-bridge)
+
 **`mcp-ui-bridge` is a project dedicated to making web applications natively and equally accessible to both human users and Large Language Models (LLMs) through a single, unified development effort.**
 
 It embodies the concept of **LLM-Oriented Accessibility**: a new paradigm for web interaction. Instead of forcing LLMs to interpret visual UIs (often unreliably) or requiring developers to build separate, limited APIs for them, LLM-Oriented Accessibility focuses on providing LLMs with a structured, text-based, and semantically rich understanding of a web application. This is achieved by instrumenting the web application with `data-mcp-*` attributes that the `mcp-ui-bridge` tool can then parse and expose via a Model Context Protocol (MCP) server.
