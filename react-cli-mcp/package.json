@@ -1,18 +1,37 @@
 {
-  "name": "mcp-ui-bridge",
+  "name": "react-cli-mcp",
   "version": "1.0.0",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/mcp_server.js",
+  "types": "dist/mcp_server.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('./dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
     "start": "node dist/main.js",
     "dev": "tsc --watch & node --watch dist/main.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "react",
+    "mcp",
+    "playwright",
+    "automation",
+    "llm",
+    "ai",
+    "browser automation"
+  ],
+  "author": "Your Name/Organization Here",
   "license": "ISC",
-  "description": "",
+  "description": "A library to enable LLM interaction with React web applications via the Model Context Protocol (MCP), using Playwright for browser automation.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/react-cli-mcp.git"
+  },
   "devDependencies": {
     "@types/express": "^4.17.22",
     "@types/node": "^22.15.18",

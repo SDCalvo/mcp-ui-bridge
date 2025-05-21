@@ -4,6 +4,11 @@
             "transport": "sse",
             "url": "http://localhost:3000/mcp/sse",
             "description": "MCP server for interacting with the target React application via Playwright."
+        },
+        "frontend-test-agent": {
+            "transport": "sse",
+            "url": "http://localhost:3001/mcp/sse",
+            "description": "MCP server for interacting with the target React application via Playwright."
         }
     }
 }

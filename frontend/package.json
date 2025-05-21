@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start-mcp-agent": "npx tsx ./scripts/launch-mcp.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.76.1",
@@ -18,8 +19,10 @@
     "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
+    "react-cli-mcp": "file:../react-cli-mcp",
     "@eslint/js": "^9.25.0",
     "@tailwindcss/postcss": "^4.1.7",
+    "@types/node": "^22.15.21",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@types/react-router-dom": "^5.3.3",

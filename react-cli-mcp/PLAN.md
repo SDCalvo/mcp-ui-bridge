@@ -190,7 +190,7 @@ The `DomParser` currently:
   - [ ] **Task 3.4.2**: Integration Testing
     - [ ] Test CLI functionality
     - [ ] Test MCP server functionality
-    - [ ] Test end-to-end flows with the Todo app
+    - [x] Test end-to-end flows with the Todo app _(Successfully tested via local library usage)_
   - [ ] **Task 3.4.3**: Performance Testing
     - [ ] Measure response times for various operations
     - [ ] Test with different page complexities
@@ -200,31 +200,31 @@ The `DomParser` currently:
 
   - **Goal**: Package the `mcp-ui-bridge` system into an easy-to-use tool. Developers can install and run this tool against their web application, which will automatically start the DOM parser, the MCP server (for LLM interaction), and optionally the interactive CLI (for debugging/direct use).
 
-  - [ ] **Task 3.4.1**: Create Configurable Entry Points & Core Abstraction
+  - [x] **Task 3.4.1**: Create Configurable Entry Points & Core Abstraction
 
-    - [ ] Define clear entry points for starting the system (e.g., a primary CLI command like `npx mcp-ui-bridge connect --url <app-url>` and/or a simple programmatic function like `runMcpServer({targetUrl: '<app-url>'})`).
-    - [ ] Abstract the core application logic (Playwright launching, DOM parsing, MCP server startup, CLI loop) into a primary class or module that can be invoked by these entry points.
-    - [ ] Implement configuration options (e.g., target URL, headless mode, MCP server port, enable/disable interactive CLI mode) passable via CLI arguments or function parameters.
-    - [ ] Ensure the MCP server component can be started and run independently of the interactive `inquirer`-based CLI prompt, allowing for server-only operation.
+    - [x] Define clear entry points for starting the system (e.g., a primary CLI command like `npx mcp-ui-bridge connect --url <app-url>` and/or a simple programmatic function like `runMcpServer({targetUrl: '<app-url>'})`). _(Implemented `runMcpServer` for programmatic use)_
+    - [x] Abstract the core application logic (Playwright launching, DOM parsing, MCP server startup, CLI loop) into a primary class or module that can be invoked by these entry points. _(`mcp_server.ts` and its `runMcpServer` function)_
+    - [x] Implement configuration options (e.g., target URL, headless mode, MCP server port, enable/disable interactive CLI mode) passable via CLI arguments or function parameters. _(Implemented via `McpServerOptions` for programmatic use)_
+    - [x] Ensure the MCP server component can be started and run independently of the interactive `inquirer`-based CLI prompt, allowing for server-only operation. _(This is the current primary mode of operation)_
 
-  - [ ] **Task 3.4.2**: Configure `package.json` for Distribution
+  - [x] **Task 3.4.2**: Configure `package.json` for Distribution
 
-    - [ ] Set `bin` field for CLI command(s).
-    - [ ] Set `main`, `module`, and `types` fields to point to appropriate library entry points if a programmatic API is also offered.
-    - [ ] Define `files` to include necessary distributable files (compiled JS, type definitions).
-    - [ ] Add relevant metadata (keywords, author, license, repository URL, description).
+    - [ ] Set `bin` field for CLI command(s). _(Not yet, as we're focusing on library usage first)_
+    - [x] Set `main`, `module`, and `types` fields to point to appropriate library entry points if a programmatic API is also offered. _(Set `main` to `dist/mcp_server.js` and `types` to `dist/mcp_server.d.ts`)_
+    - [x] Define `files` to include necessary distributable files (compiled JS, type definitions). _(Added `dist`, `README.md`, `LICENSE`)_
+    - [x] Add relevant metadata (keywords, author, license, repository URL, description). _(Added keywords, author, description, repository; assuming LICENSE will be added manually)_
 
-  - [ ] **Task 3.4.3**: Build Process for Distributable Tool
+  - [x] **Task 3.4.3**: Build Process for Distributable Tool
 
-    - [ ] Ensure `tsc` build process in `tsconfig.json` and `package.json` scripts correctly compiles the project for distribution, including generating necessary declaration files.
-    - [ ] Verify the build output works as expected when installed/run in a different project.
+    - [x] Ensure `tsc` build process in `tsconfig.json` and `package.json` scripts correctly compiles the project for distribution, including generating necessary declaration files. _(Added `declaration: true`, `declarationMap: true`, `sourceMap: true` to `tsconfig.json`; updated build scripts)_
+    - [x] Verify the build output works as expected when installed/run in a different project. _(Successfully tested using `npm link` and `file:` path in the test frontend project)_
 
-  - [ ] **Task 3.4.4**: Tool Usage Documentation
+  - [x] **Task 3.4.4**: Tool Usage Documentation
 
-    - [ ] Update `README.md` with clear instructions on how to install and run the `mcp-ui-bridge` tool against a web application.
-    - [ ] Document all CLI commands, options, and any programmatic API if offered.
-    - [ ] Provide examples of how to connect an MCP client to the server started by the tool.
-    - [ ] Add TSDoc comments to any programmatically exposed functions/classes for auto-generated API documentation (e.g., using TypeDoc) if applicable.
+    - [x] Update `README.md` with clear instructions on how to install and run the `mcp-ui-bridge` tool against a web application. _(Created `react-cli-mcp/README.md` with installation and programmatic usage instructions)_
+    - [x] Document all CLI commands, options, and any programmatic API if offered. _(Programmatic API `runMcpServer` and `McpServerOptions` documented in README)_
+    - [x] Provide examples of how to connect an MCP client to the server started by the tool. _(Example usage script `frontend/scripts/launch-mcp.ts` created and README describes its purpose)_
+    - [ ] Add TSDoc comments to any programmatically exposed functions/classes for auto-generated API documentation (e.g., using TypeDoc) if applicable. _(Basic TSDoc comments exist, can be expanded)_
 
   - [ ] **Task 3.4.5**: (Optional) Publish to npm
     - [ ] If intended for public use, prepare for and publish the package to the npm registry.
@@ -274,9 +274,10 @@ The `DomParser` currently:
 
 ## 10. Recent Progress & Next Steps (As of 2024-05-17)
 
-**Recently Completed:**
+**Recently Completed (Updated on 2024-05-21):**
 
 - **Functional MCP Server Implementation (`Phase 3.3`):**
+
   - Successfully refactored `src/mcp_server.ts` to be a fully functional MCP server using `FastMCP` (TypeScript version).
   - Integrated `PlaywrightController` to manage browser instances and interactions.
   - Integrated `DomParser` to analyze the live DOM of the target web application based on `data-mcp-*` attributes.
@@ -284,8 +285,35 @@ The `DomParser` currently:
   - The `get_current_screen_actions` tool now correctly derives actionable commands and hints from the interactive elements.
   - The `get_page_screenshot` tool was implemented to capture page screenshots as base64 strings, but it is currently not exposed via the MCP server as the LLM cannot directly interpret images. The code for this tool remains available.
   - The `send_command` tool can now parse `click #id` and `type #id "text"` commands, execute them using `PlaywrightController`, and return the action's outcome.
-  - The server correctly launches Playwright, navigates to the target URL (configurable via `MCP_TARGET_URL`), and handles basic interactions.
+  - The server correctly launches Playwright, navigates to the target URL (configurable via `MCP_TARGET_URL` or `McpServerOptions`), and handles basic interactions.
   - Tested end-to-end flow: MCP client calls tools -> MCP server interacts with web app via Playwright -> web app state changes -> MCP server reports new state.
+  - **Type Definition Consolidation:** Moved all type definitions from `src/core/types.ts` to `src/types/index.ts` and updated all import paths. Deleted `src/core/types.ts`.
+  - **Verified MCP Tool Functionality:** Confirmed `get_current_screen_data`, `get_current_screen_actions`, and `send_command` (click, type) are working correctly after type refactoring and before library packaging. Successfully deleted all existing todos and added a new one.
+
+- **Library Packaging & Local Testing (`Phase 3.5` initiated):**
+  - **`tsconfig.json` Updates (`Task 3.4.3`):** Added `declaration: true`, `declarationMap: true`, `sourceMap: true` to enable generation of type definition files for library consumers.
+  - **`package.json` Updates (`Task 3.4.2`):**
+    - Set `name` to `react-cli-mcp`.
+    - Set `main` to `dist/mcp_server.js` and `types` to `dist/mcp_server.d.ts`.
+    - Added `files` array to include `dist`, `README.md`, and `LICENSE`.
+    - Added `keywords`, `author`, and `description`.
+    - Updated `build` script to `npm run clean && tsc`.
+    - Ensured `clean` script correctly removes the `dist` directory.
+  - **README Creation (`Task 3.4.4`):** Created a dedicated `react-cli-mcp/README.md` file with:
+    - Project overview.
+    - Features.
+    - Installation instructions (as a library).
+    - Programmatic usage example (importing `runMcpServer` and `McpServerOptions`).
+    - Configuration options for `McpServerOptions`.
+    - Instructions on how to run the example (pointing to the test frontend scenario).
+  - **Local Testing as a Library:**
+    - Successfully built `react-cli-mcp` using `npm run build`.
+    - Used `npm link` in `react-cli-mcp` and then `npm link react-cli-mcp` in the `frontend` test project.
+    - **Alternative Linking:** Successfully switched to using `file:../react-cli-mcp` in `frontend/package.json`'s `devDependencies` and ran `npm install` for a more stable local dependency setup.
+    - Created `frontend/scripts/launch-mcp.ts` to programmatically import and run `react-cli-mcp` using `runMcpServer` with specific options.
+    - Added `start-mcp-agent` script to `frontend/package.json` (`npx tsx ./scripts/launch-mcp.ts`).
+    - Resolved TypeScript configuration issues in `frontend/tsconfig.node.json` (module resolution, includes) and type import issues (`verbatimModuleSyntax`) in `launch-mcp.ts`.
+    - **Successfully tested all MCP tools** (`get_current_screen_data`, `get_current_screen_actions`, `send_command`) using the `frontend` project's `start-mcp-agent` script, confirming the library works as intended when imported and used by another project. The MCP agent connected via Cursor used the server instance started by `launch-mcp.ts`.
 
 **Potential Next Steps:**
 
@@ -295,9 +323,9 @@ The `DomParser` currently:
 2.  **Expand `send_command` Capabilities:**
     - Consider adding support for other actions (e.g., `select #id "value"`, `scroll #id`, `hover #id`, `state #id` as a command if distinct from `getElementState` which is internal).
     - Improve parsing for more complex parameters if needed.
-3.  **MCP Test Client (`Task 3.3.3`):**
+3.  **MCP Test Client (`Task 3.3.3` - was previously under Phase 3.3):**
     - Develop a simple, dedicated MCP client script for more streamlined testing of the server, beyond the interactive tool usage here. This would help in automating test sequences.
-4.  **Formalize MCP Message Schemas (`Task 3.3.1`):**
+4.  **Formalize MCP Message Schemas (`Task 3.3.1` - was previously under Phase 3.3):**
     - While FastMCP handles schema generation for tool parameters, consider documenting or even generating/exposing JSON schemas for the _return values_ of `get_current_screen_data` and `get_current_screen_actions` for client-side validation and type generation.
 5.  **Begin Unit and Integration Testing (`Phase 3.4`):**
     - Start writing unit tests for the `DomParser` logic (especially attribute/label/type inference).
@@ -305,13 +333,17 @@ The `DomParser` currently:
     - Write integration tests for the MCP server tools, possibly using the test client mentioned above.
 6.  **Address `main.ts` (Original CLI):**
     - The `PLAN.md` mentions `main.ts` as the previous CLI entry point. Decide on its future:
-      - Will it be deprecated in favor of only the MCP server?
-      - Will it be updated to _use_ the MCP server as a client for local CLI interaction/debugging?
-      - Or, will the `mcp_server.ts` become the sole entry point for the tool, perhaps with a command-line flag to enable an interactive diagnostic mode? (This aligns with `Phase 3.5, Task 3.4.1`).
-7.  **Documentation (`Task 3.4.4`):**
-    - Start documenting how to run the MCP server and connect a generic MCP client to it.
-    - Document the expected `data-mcp-*` attributes for web app developers.
-8.  **Configuration Improvements:**
-    - Consider a configuration file (e.g., JSON or YAML) for server settings (target URL, port, headless mode, timeouts) as an alternative or supplement to environment variables for easier management.
+      - Will it be deprecated in favor of only the MCP server and library usage?
+      - Will it be updated to _use_ the MCP server as a client for local CLI interaction/debugging (using the library itself)?
+      - Or, will the `mcp_server.ts` (when run directly via Node, if that's desired) become the sole entry point for the tool if a direct CLI executable is still needed, perhaps with a command-line flag to enable an interactive diagnostic mode? _(Currently `src/main.ts` is the entry for `npm run start` and correctly uses `runMcpServer` from `mcp_server.ts`)_. Consider if `src/main.ts` is still the best name/place if the project is primarily a library.
+7.  **TSDoc and API Documentation (`Task 3.4.4` refinement):**
+    - Enhance TSDoc comments for all exported functions and types in `react-cli-mcp` for better auto-generated documentation (e.g., using TypeDoc).
+8.  **Configuration Improvements for Library Usage:**
+    - Ensure `McpServerOptions` is comprehensive for library users.
+    - Review default behaviors and error handling when used as a library.
+9.  **CLI Entry Point (`Task 3.4.2` - `bin` field):**
+    - Revisit if a global CLI command (e.g., `npx react-cli-mcp start --url ...`) is still desired in addition to the programmatic library usage. If so, implement the `bin` in `package.json` and a CLI argument parsing mechanism in `src/main.ts` or a dedicated CLI entry point script.
+10. **Publish to npm (`Task 3.4.5`):**
+    - Once further testing and documentation are complete, consider publishing to npm.
 
 ---
