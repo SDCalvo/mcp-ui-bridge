@@ -118,3 +118,95 @@ export interface LoadingIndicatorInfo {
   // Potentially text content if the indicator has a message e.g. "Loading..."
   text?: string;
 }
+
+// --- Authentication Related Types ---
+
+/**
+ * Context object passed to the custom authentication callback.
+ * Provides details about the incoming MCP client request.
+ */
+export interface ClientAuthContext {
+  /**
+   * HTTP headers from the incoming request.
+   * Header names will be lowercase.
+   * Values can be string or array of strings (for multi-value headers).
+   */
+  headers: Record<string, string | string[] | undefined>;
+
+  /**
+   * The source IP address of the incoming request.
+   * Note: Accuracy can be affected by proxies. Library users should consider
+   * X-Forwarded-For header if their server is behind a reverse proxy.
+   * This should be documented by the library user for their specific setup.
+   */
+  sourceIp?: string;
+
+  // TODO: Consider adding other relevant request details if they become available
+  // from FastMCP and are useful for authentication (e.g., original URL, method).
+}
+
+/**
+ * Signature for the user-provided custom authentication function.
+ * @param context - The authentication context containing request details.
+ * @returns A Promise that resolves to `true` if authentication is successful,
+ * or `false` otherwise.
+ */
+export type AuthenticateClientCallback = (
+  context: ClientAuthContext
+) => Promise<boolean>;
+
+// --- MCP Server Options ---
+
+/**
+ * Configuration options for running the MCP server.
+ */
+export interface McpServerOptions {
+  /** The target URL of the web application to interact with. */
+  targetUrl: string;
+
+  /**
+   * Port number for the MCP server to listen on.
+   * Defaults to a port defined in `mcp_server.ts` if not provided (e.g., 8090).
+   */
+  port?: number;
+
+  /**
+   * Whether to run the Playwright browser in headless mode.
+   * Defaults to `true` (headless). Set to `false` for visual debugging.
+   */
+  headlessBrowser?: boolean;
+
+  /**
+   * The SSE (Server-Sent Events) endpoint path for MCP communication.
+   * Must start with a '/'. Example: "/sse" or "/mcp-events".
+   * Defaults to a path defined in `mcp_server.ts` if not provided (e.g., "/sse").
+   */
+  sseEndpoint?: `/${string}`;
+
+  /**
+   * Optional. A user-provided asynchronous function to authenticate incoming MCP client requests.
+   * If provided, this function will be called for each new client connection attempt.
+   * The function should return a Promise that resolves to `true` if authentication is successful,
+   * or `false` otherwise.
+   * If an error occurs within this function, react-cli-mcp will log it, and the authentication
+   * will be treated as failed (resulting in a 401 Unauthorized response).
+   * If this option is not provided, the MCP server will be open and will not perform
+   * any client authentication checks.
+   */
+  authenticateClient?: AuthenticateClientCallback;
+
+  /** Optional. Name of the MCP server. Defaults to "react-cli-mcp-server". */
+  serverName?: string;
+
+  /**
+   * Optional. Version of the MCP server in X.Y.Z format. Defaults to "0.1.0".
+   * Must conform to the semantic versioning format if provided.
+   */
+  serverVersion?: `${number}.${number}.${number}`;
+
+  /**
+   * Optional. Instructions for the LLM on how to use this server and its tools.
+   * This might be included in a system prompt by the MCP client.
+   */
+  serverInstructions?: string;
+}

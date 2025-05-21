@@ -124,7 +124,36 @@ When running `npm run start` for `mcp-ui-bridge`, it will look for the following
 
 Once `mcp-ui-bridge` starts successfully, it will connect to the `MCP_TARGET_URL`, and an MCP client (like an LLM integrated with an MCP library) can connect to `mcp-ui-bridge` (e.g., at `http://localhost:3000/mcp/sse`) to start interacting with the web application.
 
-### 4. Using `mcp-ui-bridge` with Cursor
+### 4. Running the `mcp-external-server` (Primary Way to Use the Bridge)
+
+The `mcp-external-server` is a pre-configured application that uses the `react-cli-mcp` library to connect to your frontend. This is the recommended way to run the MCP bridge.
+
+```bash
+# Navigate to the mcp-external-server directory
+cd mcp-external-server
+
+# Install dependencies
+npm install
+
+# Start the server (uses ts-node-dev or nodemon for auto-reloading TypeScript changes)
+npm run dev
+```
+
+The server will typically start on `http://localhost:8070`.
+
+**Configuration for `mcp-external-server`:**
+
+The primary configuration for `mcp-external-server` is done within its `src/index.ts` file, where `McpServerOptions` are set. However, it's coded to respect the following environment variables (which can override the defaults in `src/index.ts`):
+
+- `MCP_TARGET_URL`: The URL of the web application (e.g., `http://localhost:5173` for the sample frontend).
+- `MCP_PORT`: The port for the `mcp-external-server` to listen on (default: `8070`).
+- `MCP_HEADLESS_BROWSER`: Set to `true` for headless mode, `false` (default) to see the browser.
+
+Example: `MCP_TARGET_URL=http://localhost:5173 npm run dev`
+
+The `mcp-external-server` also includes a toy authentication mechanism in its `src/index.ts` (the `MANUALLY_ALLOW_CONNECTION` variable) for testing purposes.
+
+### 5. Using `mcp-ui-bridge` with Cursor
 
 To enable an LLM within Cursor (like the Cursor agent) to use the tools provided by `mcp-ui-bridge` and interact with your running web application, follow these steps:
 
@@ -172,6 +201,131 @@ Once enabled, the Cursor agent will have access to the following tools from `mcp
 - `send_command`
 
 This allows you to instruct Cursor to interact with your web application, test features, and assist in development in a tight iterative loop, as described in the "Key Benefits" section.
+
+## Using `mcp-ui-bridge` as a Library
+
+The `mcp-ui-bridge` package is designed to be used as a library within your own Node.js projects, allowing you to create a custom MCP server that bridges your web application to LLMs.
+
+### Installation
+
+Once published to npm:
+
+```bash
+npm install mcp-ui-bridge
+```
+
+For local development or if using it directly from this monorepo structure into a sibling project, you might use `npm link` or specify a file path in your `package.json` (referencing the `react-cli-mcp` directory if that's where the source lives before publishing under the new name):
+
+```json
+"dependencies": {
+  "mcp-ui-bridge": "file:../path/to/react-cli-mcp" // Adjust path as needed
+}
+```
+
+### Basic Usage
+
+Here's a minimal example of how to use `runMcpServer`:
+
+```typescript
+// your-custom-mcp-server.ts
+import {
+  runMcpServer,
+  McpServerOptions,
+  ClientAuthContext,
+} from "mcp-ui-bridge";
+
+async function startMyMcpBridge() {
+  const options: McpServerOptions = {
+    targetUrl: process.env.MY_APP_URL || "http://localhost:3000", // URL of your web application
+    port: Number(process.env.MY_MCP_BRIDGE_PORT) || 8090,
+    headlessBrowser: process.env.HEADLESS !== "false",
+    serverName: "My Custom MCP Bridge",
+    serverVersion: "1.0.0",
+    serverInstructions: "This bridge connects to My Awesome App.",
+    // Optional: Implement custom client authentication
+    authenticateClient: async (
+      context: ClientAuthContext
+    ): Promise<boolean> => {
+      console.log(`Authentication attempt from IP: ${context.sourceIp}`);
+      const apiKey = context.headers["x-my-app-api-key"];
+      if (apiKey && apiKey === process.env.MY_EXPECTED_API_KEY) {
+        console.log("Client authenticated successfully.");
+        return true;
+      }
+      console.log("Client authentication failed.");
+      return false;
+    },
+  };
+
+  try {
+    await runMcpServer(options);
+    console.log(
+      `My Custom MCP Bridge started on port ${options.port}, targeting ${options.targetUrl}`
+    );
+  } catch (error) {
+    console.error("Failed to start My Custom MCP Bridge:", error);
+    process.exit(1);
+  }
+}
+
+startMyMcpBridge();
+```
+
+### Key `McpServerOptions`
+
+- `targetUrl` (string, required): The URL of the web application the MCP server will control.
+- `port` (number, optional): Port for the MCP server. Defaults to `8080` if not set by `MCP_PORT` env var or this option.
+- `headlessBrowser` (boolean, optional): Whether to run Playwright in headless mode. Defaults to `false`.
+- `ssePath` (string, optional): The path for the Server-Sent Events (SSE) endpoint. Defaults to `/sse`.
+- `serverName` (string, optional): Name of your MCP server.
+- `serverVersion` (string, optional): Version of your MCP server.
+- `serverInstructions` (string, optional): Instructions for the LLM on how to use this server or the target application.
+- `authenticateClient` (function, optional): `async (context: ClientAuthContext) => Promise<boolean>`.
+  - `ClientAuthContext` provides `{ headers: Record<string, string | string[] | undefined>, sourceIp: string | undefined }`.
+  - Return `true` to allow the connection, `false` to deny (results in a 401 response).
+  - This allows you to implement custom logic, like API key validation, to secure your MCP server.
+
+Using the library allows you to host this MCP bridge as part of a larger backend, deploy it as a standalone service, and integrate custom authentication seamlessly.
+
+## Instrumenting Your Frontend: The `data-mcp-*` Attributes
+
+The core philosophy of `mcp-ui-bridge` is **LLM-Oriented Accessibility**. This is achieved by instrumenting your web application's HTML with specific `data-mcp-*` attributes. These attributes provide semantic meaning, allowing the `DomParser` within the `mcp-ui-bridge` library to understand the structure, interactive elements, and purpose of your UI, and then convey this understanding to an LLM.
+
+Here are the key `data-mcp-*` attributes:
+
+| Attribute                      | Purpose                                                                                                | Value(s) / Notes                                                                                                        | Example Usage                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `data-mcp-interactive-element` | **Required for most interactive elements.** Marks an element that the LLM can interact with.           | Can be empty. If the element is not an `input`, `button`, `select`, `a`, or `textarea`, this value is used as its `id`. | `<div data-mcp-interactive-element="custom-button">Click Me</div>`                |
+| `data-mcp-element-label`       | Provides a human-readable label for the element. Crucial for LLM understanding.                        | String (e.g., "Submit Form", "User Name Input")                                                                         | `<input data-mcp-element-label="User Name Input">`                                |
+| `data-mcp-element-type`        | Explicitly defines the type of a custom interactive element (if not a standard HTML tag).              | String (e.g., "custom-slider", "date-picker")                                                                           | `<div data-mcp-interactive-element data-mcp-element-type="star-rating">...</div>` |
+| `data-mcp-current-value`       | For custom elements, explicitly provides their current value if not readable from standard properties. | String                                                                                                                  | `<div data-mcp-current-value="75%">...</div>`                                     |
+| `data-mcp-purpose`             | Describes the high-level goal or function of the element or a region.                                  | String (e.g., "submit-user-profile", "display-search-results")                                                          | `<button data-mcp-purpose="submit-user-profile">Save</button>`                    |
+| `data-mcp-container-id`        | Groups related items, often used for lists or collections of data. Parsed into `structuredData`.       | String (unique ID for the container)                                                                                    | `<ul data-mcp-container-id="todo-list">...</ul>`                                  |
+| `data-mcp-item-text`           | Identifies the text content of an item within a `data-mcp-container-id`. Parsed into `structuredData`. | String (extracted from the element's text content if not specified)                                                     | `<li data-mcp-item-text>Buy milk</li>`                                            |
+| `data-mcp-region-id`           | Defines a semantic region on the page. Parsed into `structuredData`.                                   | String (unique ID for the region)                                                                                       | `<section data-mcp-region-id="user-settings">...</section>`                       |
+| `data-mcp-navigates-to`        | For `<a>` tags or custom navigation elements, indicates the destination URL or view.                   | String (URL or logical view name)                                                                                       | `<a data-mcp-navigates-to="/profile">Profile</a>`                                 |
+| `data-mcp-updates-container`   | Indicates which `data-mcp-container-id` or `data-mcp-region-id` this element might modify or refresh.  | String (ID of the container/region)                                                                                     | `<button data-mcp-updates-container="todo-list">Add</button>`                     |
+| `data-mcp-controls-element`    | Links an interactive element (like a button) to the element it primarily controls (like an input).     | String (ID of the controlled element)                                                                                   | `<button data-mcp-controls-element="username-input">...</button>`                 |
+| `data-mcp-is-disabled`         | Explicitly marks an element as disabled if the standard `disabled` attribute isn't sufficient/used.    | "true" or "false"                                                                                                       | `<div data-mcp-is-disabled="true">Cannot click</div>`                             |
+| `data-mcp-is-readonly`         | Explicitly marks an element as read-only.                                                              | "true" or "false"                                                                                                       | `<div data-mcp-is-readonly="true">View Only</div>`                                |
+| `data-mcp-is-checked`          | For custom checkbox-like elements, explicitly provides their checked state.                            | "true" or "false"                                                                                                       | `<div data-mcp-is-checked="true">Subscribed</div>`                                |
+| `data-mcp-custom-state`        | For elements with complex states beyond simple values, allows exposing a descriptive state string.     | String (e.g., "expanded", "loading", "error")                                                                           | `<div data-mcp-custom-state="expanded">Details</div>`                             |
+
+By thoughtfully applying these attributes, you create a rich, semantic layer over your existing UI. The `DomParser` uses this layer to generate the `currentUrl`, `structuredData` (from containers and regions), and `interactiveElements` (with their labels, types, values, and purposes) that are sent to the LLM. This enables the LLM to "understand" the page contextually and perform actions accurately.
+
+This instrumentation is the cornerstone of aligning your frontend with the `mcp-ui-bridge` design philosophy: build for humans, annotate for LLMs, and serve both effectively from a single codebase.
+
+## Testing the Setup
+
+Once all necessary components are running (Frontend, Backend (if any), and `mcp-external-server`), you can test the setup:
+
+1.  **Connect with an MCP Client:** Use Cursor (configured as described above) or another MCP client to connect to the `mcp-external-server` (e.g., at `http://localhost:8070/sse`).
+2.  **Test Basic Interaction:** Try using tools like `get_current_screen_data` or `send_command` to interact with your frontend application.
+3.  **Test Authentication (Toy Implementation):**
+    - The `mcp-external-server/src/index.ts` includes a simple authentication mechanism controlled by the `MANUALLY_ALLOW_CONNECTION` variable.
+    - **To allow connections:** Set `MANUALLY_ALLOW_CONNECTION = true;` in `mcp-external-server/src/index.ts`. The MCP client should connect successfully.
+    - **To deny connections:** Set `MANUALLY_ALLOW_CONNECTION = false;` in `mcp-external-server/src/index.ts`. The `nodemon` process (if using `npm run dev`) will restart the server. Attempts to connect with an MCP client should now fail (e.g., Cursor might show a connection error).
+    - Check the console output of `mcp-external-server` for logs indicating authentication attempts and success/failure. This confirms the `authenticateClient` callback provided to `runMcpServer` is working.
 
 ## Current Features (Highlights from `PLAN.md`)
 

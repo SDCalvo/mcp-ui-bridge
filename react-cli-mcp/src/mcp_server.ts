@@ -1,30 +1,23 @@
-import { FastMCP } from "fastmcp";
+import { FastMCP, UserError } from "fastmcp";
 import { z } from "zod";
 import { PlaywrightController } from "./core/playwright-controller.js";
 import { DomParser } from "./core/dom-parser.js";
-// Page import is not directly used at the top level after refactor, PlaywrightController handles it.
-// import { Page } from "playwright";
 import {
   InteractiveElementInfo,
   ActionResult,
   ParserResult,
   PlaywrightErrorType,
+  McpServerOptions,
+  ClientAuthContext,
+  AuthenticateClientCallback,
 } from "./types/index.js";
 import { pathToFileURL } from "url";
 import { resolve } from "path";
 
-console.log("[mcp_server.ts] Initializing FastMCP server logic...");
+// Explicitly re-export the types needed by consumers of the library
+export { McpServerOptions, ClientAuthContext, type AuthenticateClientCallback };
 
-// --- Configuration Interface ---
-export interface McpServerOptions {
-  targetUrl: string;
-  headlessBrowser: boolean;
-  mcpPort: number;
-  mcpSseEndpoint: `/${string}`;
-  serverName?: string;
-  serverVersion?: `${number}.${number}.${number}`;
-  serverInstructions?: string;
-}
+console.log("[mcp_server.ts] Initializing FastMCP server logic...");
 
 // --- Global Instances ---
 // These will be initialized by runMcpServer via initializeBrowserAndDependencies
@@ -91,17 +84,17 @@ async function initializeBrowserAndDependencies(
 
 // --- MCP Server Instance ---
 // Server instance is now created within runMcpServer
-let server: FastMCP | null = null;
+let server: FastMCP<any> | null = null;
 
 // --- Tool Definitions ---
 // These functions will add tools to the server instance when it's created.
-function addCoreTools(mcpServer: FastMCP) {
+function addCoreTools(mcpServer: FastMCP<any>) {
   // Get Current Screen Data Tool
   mcpServer.addTool({
     name: "get_current_screen_data",
     description:
       "Gets the current structured data and interactive elements displayed on the screen.",
-    parameters: undefined, // Switched to undefined as per FastMCP examples for no-param tools
+    parameters: undefined,
     execute: async () => {
       if (
         !domParser ||
@@ -248,6 +241,15 @@ function addCoreTools(mcpServer: FastMCP) {
                   "input-checkbox",
                   "input-radio",
                   "input-file",
+                  "input-reset",
+                  "input-image",
+                  "input-color",
+                  "input-range",
+                  "input-date",
+                  "input-month",
+                  "input-week",
+                  "input-time",
+                  "input-datetime-local",
                 ].includes(el.elementType)) ||
               el.elementType === "textarea"
             ) {
@@ -256,104 +258,61 @@ function addCoreTools(mcpServer: FastMCP) {
                 label: el.label,
                 elementType: el.elementType,
                 purpose: el.purpose,
-                commandHint: `type #${el.id} "your text"`,
+                commandHint: `type #${el.id} "<text_to_type>"`,
                 currentValue: el.currentValue,
+                isChecked: el.isChecked,
                 isDisabled: el.isDisabled,
                 isReadOnly: el.isReadOnly,
               });
-              // Clear action for text inputs with content
-              if (el.currentValue) {
-                generatedActions.push({
-                  id: el.id,
-                  label: el.label,
-                  elementType: el.elementType,
-                  purpose: el.purpose,
-                  commandHint: `clear #${el.id} (Clear input '${el.label}')`,
-                  currentValue: el.currentValue, // Keep other info for context
-                  isDisabled: el.isDisabled,
-                  isReadOnly: el.isReadOnly,
-                });
-              }
             }
 
-            // Check/Uncheck for checkboxes
-            if (el.elementType === "input-checkbox") {
-              if (el.isChecked) {
-                generatedActions.push({
-                  id: el.id,
-                  label: el.label,
-                  elementType: el.elementType,
-                  purpose: el.purpose,
-                  commandHint: `uncheck #${el.id} (Uncheck '${el.label}')`,
-                  currentValue: el.currentValue,
-                  isChecked: el.isChecked,
-                  isDisabled: el.isDisabled,
-                  isReadOnly: el.isReadOnly,
-                });
-              } else {
-                generatedActions.push({
-                  id: el.id,
-                  label: el.label,
-                  elementType: el.elementType,
-                  purpose: el.purpose,
-                  commandHint: `check #${el.id} (Check '${el.label}')`,
-                  currentValue: el.currentValue,
-                  isChecked: el.isChecked,
-                  isDisabled: el.isDisabled,
-                  isReadOnly: el.isReadOnly,
-                });
-              }
-            }
-
-            // Choose for radio buttons
-            if (el.elementType === "input-radio") {
-              generatedActions.push({
-                id: el.id, // Use the specific radio button's ID for the hint
-                label: el.label,
-                elementType: el.elementType,
-                purpose: el.purpose,
-                commandHint: `choose #${el.id} "${el.currentValue}" (Choose '${el.label}')`,
-                currentValue: el.currentValue,
-                isChecked: el.isChecked, // Important for client to know which is selected
-                isDisabled: el.isDisabled,
-                isReadOnly: el.isReadOnly,
-                radioGroup: el.radioGroup,
-              });
-            }
-
-            // Select for select elements
+            // Select action for select elements
             if (el.elementType === "select" && el.options) {
-              el.options.forEach(
-                (option: {
-                  value: string;
-                  text: string;
-                  selected?: boolean;
-                }) => {
-                  generatedActions.push({
-                    id: el.id,
-                    label: el.label, // Label of the select element
-                    elementType: el.elementType,
-                    purpose: el.purpose,
-                    commandHint: `select #${el.id} "${option.value}" (Selects '${option.text}')`,
-                    currentValue: el.currentValue, // Current value of the select
-                    optionValue: option.value, // Specific option value for this action
-                    optionText: option.text, // Specific option text for this action
-                    isDisabled: el.isDisabled,
-                    isReadOnly: el.isReadOnly,
-                  });
-                }
-              );
-            }
-
-            // Hover action for all interactive elements (if not disabled)
-            if (!el.isDisabled) {
               generatedActions.push({
                 id: el.id,
                 label: el.label,
                 elementType: el.elementType,
                 purpose: el.purpose,
-                commandHint: `hover #${el.id} (Hover over '${el.label}')`,
+                commandHint: `select #${el.id} "<value_to_select>"`,
                 currentValue: el.currentValue,
+                options: el.options.map((opt) => ({
+                  value: opt.value,
+                  text: opt.text,
+                })),
+                isDisabled: el.isDisabled,
+                isReadOnly: el.isReadOnly,
+              });
+            }
+
+            // Check/uncheck for checkboxes
+            if (el.elementType === "input-checkbox") {
+              generatedActions.push({
+                id: el.id,
+                label: el.label,
+                elementType: el.elementType,
+                purpose: el.purpose,
+                commandHint: el.isChecked
+                  ? `uncheck #${el.id}`
+                  : `check #${el.id}`,
+                currentValue: el.currentValue,
+                isChecked: el.isChecked,
+                isDisabled: el.isDisabled,
+                isReadOnly: el.isReadOnly,
+              });
+            }
+
+            // Choose for radio buttons (note: command for radio usually involves selecting one from a group)
+            if (el.elementType === "input-radio") {
+              generatedActions.push({
+                id: el.id, // Individual radio button ID
+                label: el.label,
+                radioGroup: el.radioGroup, // Group name is important here
+                elementType: el.elementType,
+                purpose: el.purpose,
+                commandHint: `choose #${el.id}${
+                  el.radioGroup ? " in_group " + el.radioGroup : ""
+                }`,
+                currentValue: el.currentValue, // Typically the value of the radio button itself
                 isChecked: el.isChecked,
                 isDisabled: el.isDisabled,
                 isReadOnly: el.isReadOnly,
@@ -379,438 +338,344 @@ function addCoreTools(mcpServer: FastMCP) {
       }
     },
   });
+}
 
-  // Get Page Screenshot Tool
-  /*
-  mcpServer.addTool({
-    name: "get_page_screenshot",
-    description:
-      "Captures a screenshot of the current web page and returns it as a Base64 encoded string.",
-    parameters: undefined,
-    execute: async () => {
-      if (!playwrightController || !playwrightController.getPage()) {
-        console.error(
-          "[mcp_server.ts] get_page_screenshot: PlaywrightController not initialized or page not available."
-        );
-        return JSON.stringify({
-          success: false,
-          message:
-            "PlaywrightController not initialized or page not available.",
-          errorType: PlaywrightErrorType.NotInitialized,
-        });
-      }
-      console.log(
-        "[mcp_server.ts] get_page_screenshot: Capturing screenshot..."
-      );
-
-      const page = playwrightController.getPage();
-      if (!page || page.isClosed()) {
-        return JSON.stringify({
-          success: false,
-          message: "Page is closed. Cannot capture screenshot.",
-          errorType: PlaywrightErrorType.PageNotAvailable,
-        });
-      }
-
-      try {
-        const screenshotBuffer = await page.screenshot({
-          type: "png", // Specify type for clarity, default is png
-          // fullPage: true, // Consider if full page is needed or just viewport
-        });
-        const screenshotData = `data:image/png;base64,${screenshotBuffer.toString(
-          "base64"
-        )}`;
-
-        return JSON.stringify({
-          success: true,
-          message: "Screenshot captured successfully.",
-          screenshotData: screenshotData,
-          format: "png",
-        });
-      } catch (error: any) {
-        console.error("[mcp_server.ts] Error in get_page_screenshot:", error);
-        return JSON.stringify({
-          success: false,
-          message: `Error capturing screenshot: ${error.message}`,
-          errorType: PlaywrightErrorType.ActionFailed,
-        });
-      }
-    },
-  });
-  */
-
-  // Send Command Tool - Using Zod for parameters
-  const SendCommandParamsSchema = z.object({
-    command_string: z
-      .string()
-      .describe(
-        "The command string to be executed, e.g., 'click #buttonId' or 'type #inputId \"your text\"' (ensure text is quoted if it contains spaces)"
-      ),
-  });
-
+function addSendCommandTool(mcpServer: FastMCP<any>) {
   mcpServer.addTool({
     name: "send_command",
     description:
-      "Sends a command to interact with the web page (e.g., click, type, select, check, uncheck, choose, hover, clear).",
-    parameters: SendCommandParamsSchema,
-    execute: async (args: z.infer<typeof SendCommandParamsSchema>) => {
-      if (!playwrightController || !playwrightController.getPage()) {
+      'Sends a command to interact with an element on the screen. Supported commands: click #elementId, type #elementId "text to type", select #elementId "valueToSelect", check #elementId, uncheck #elementId, choose #elementId [in_group groupName].',
+    parameters: z.object({
+      command_string: z.string(),
+    }),
+    execute: async (args) => {
+      if (!playwrightController) {
         console.error(
-          "[mcp_server.ts] send_command: PlaywrightController not initialized or page not available."
+          "[mcp_server.ts] send_command: PlaywrightController not initialized."
         );
         return JSON.stringify({
           success: false,
-          message:
-            "PlaywrightController not initialized or page not available.",
+          message: "PlaywrightController not initialized.",
           errorType: PlaywrightErrorType.NotInitialized,
         });
       }
-      console.log(
-        `[mcp_server.ts] send_command: Received raw command_string: '${args.command_string}'`
+
+      const commandString = args.command_string.trim();
+      console.log(`[mcp_server.ts] Received command: ${commandString}`);
+
+      let result: ActionResult<any> = {
+        success: false,
+        message: "Invalid command string.",
+        errorType: PlaywrightErrorType.InvalidInput,
+      };
+
+      // Improved regex to handle quoted strings more robustly
+      const clickMatch = commandString.match(/^click #([^\s]+)$/i);
+      const typeMatch = commandString.match(/^type #([^\s]+) "(.*)"$/i); // Allows spaces in typed text
+      const selectMatch = commandString.match(/^select #([^\s]+) "(.*)"$/i);
+      const checkMatch = commandString.match(/^check #([^\s]+)$/i);
+      const uncheckMatch = commandString.match(/^uncheck #([^\s]+)$/i);
+      // choose #elementId or choose #elementId in_group groupName
+      const chooseMatch = commandString.match(
+        /^choose #([^\s]+)(?:\s+in_group\s+([^\s]+))?$/i
       );
 
-      if (playwrightController.getPage()?.isClosed()) {
-        return JSON.stringify({
-          success: false,
-          message: "Page is closed. Cannot send command.",
-          errorType: PlaywrightErrorType.PageNotAvailable,
-        });
-      }
-
-      const commandParts = args.command_string.match(/(?:[^\s"]+|"[^"]*")+/g);
-
-      if (!commandParts || commandParts.length < 2) {
-        const msg = `Invalid command string format: '${args.command_string}'. Expected 'action #id [params...]'.`;
-        console.error(`[mcp_server.ts] send_command: ${msg}`);
-        return JSON.stringify({
-          success: false,
-          message: msg,
-          errorType: "InvalidCommandFormat",
-        });
-      }
-
-      const action = commandParts[0].toLowerCase();
-      const elementId = commandParts[1].startsWith("#")
-        ? commandParts[1].substring(1)
-        : commandParts[1];
-
-      let result: ActionResult;
-
-      try {
-        switch (action) {
-          case "click":
-            if (commandParts.length !== 2) {
-              const msg = `Invalid 'click' command format: '${args.command_string}'. Expected 'click #id'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'click' on element ID: ${elementId}`
-            );
-            result = await playwrightController.click(elementId);
-            break;
-          case "type":
-            if (commandParts.length !== 3) {
-              const msg = `Invalid 'type' command format: '${args.command_string}'. Expected 'type #id "text"'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            let textToType = commandParts[2];
-            if (textToType.startsWith('"') && textToType.endsWith('"')) {
-              textToType = textToType.substring(1, textToType.length - 1);
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'type' in element ID: ${elementId} with text: "${textToType}"`
-            );
-            result = await playwrightController.type(elementId, textToType);
-            break;
-          case "select":
-            if (commandParts.length !== 3) {
-              const msg = `Invalid 'select' command format: '${args.command_string}'. Expected 'select #id "value"'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            let valueToSelect = commandParts[2];
-            if (valueToSelect.startsWith('"') && valueToSelect.endsWith('"')) {
-              valueToSelect = valueToSelect.substring(
-                1,
-                valueToSelect.length - 1
-              );
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'select' on element ID: ${elementId} with value: "${valueToSelect}"`
-            );
-            result = await playwrightController.selectOption(
-              elementId,
-              valueToSelect
-            );
-            break;
-          case "check":
-            if (commandParts.length !== 2) {
-              const msg = `Invalid 'check' command format: '${args.command_string}'. Expected 'check #id'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'check' on element ID: ${elementId}`
-            );
-            result = await playwrightController.checkElement(elementId);
-            break;
-          case "uncheck":
-            if (commandParts.length !== 2) {
-              const msg = `Invalid 'uncheck' command format: '${args.command_string}'. Expected 'uncheck #id'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'uncheck' on element ID: ${elementId}`
-            );
-            result = await playwrightController.uncheckElement(elementId);
-            break;
-          case "choose": // For radio buttons
-            if (commandParts.length !== 3) {
-              const msg = `Invalid 'choose' command format: '${args.command_string}'. Expected 'choose #radio_button_id "value"'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            let radioValueToChoose = commandParts[2];
-            if (
-              radioValueToChoose.startsWith('"') &&
-              radioValueToChoose.endsWith('"')
-            ) {
-              radioValueToChoose = radioValueToChoose.substring(
-                1,
-                radioValueToChoose.length - 1
-              );
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'choose' for radio group associated with ID: ${elementId} with value: "${radioValueToChoose}"`
-            );
-            result = await playwrightController.selectRadioButton(
-              elementId,
-              radioValueToChoose
-            );
-            break;
-          case "hover":
-            if (commandParts.length !== 2) {
-              const msg = `Invalid 'hover' command format: '${args.command_string}'. Expected 'hover #id'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'hover' on element ID: ${elementId}`
-            );
-            result = await playwrightController.hoverElement(elementId);
-            break;
-          case "clear":
-            if (commandParts.length !== 2) {
-              const msg = `Invalid 'clear' command format: '${args.command_string}'. Expected 'clear #id'.`;
-              console.error(`[mcp_server.ts] send_command: ${msg}`);
-              return JSON.stringify({
-                success: false,
-                message: msg,
-                errorType: "InvalidCommandFormat",
-              });
-            }
-            console.log(
-              `[mcp_server.ts] Executing 'clear' on element ID: ${elementId}`
-            );
-            result = await playwrightController.clearElement(elementId);
-            break;
-          default:
-            const msg = `Unsupported action: '${action}'. Supported actions are 'click', 'type', 'select', 'check', 'uncheck', 'choose', 'hover', 'clear'.`;
-            console.error(`[mcp_server.ts] send_command: ${msg}`);
-            return JSON.stringify({
-              success: false,
-              message: msg,
-              errorType: "UnsupportedAction",
-            });
-        }
+      if (clickMatch) {
+        const elementId = clickMatch[1];
+        console.log(`[mcp_server.ts] Executing click on #${elementId}`);
+        result = await playwrightController.click(elementId);
+      } else if (typeMatch) {
+        const elementId = typeMatch[1];
+        const textToType = typeMatch[2];
         console.log(
-          `[mcp_server.ts] Command '${action}' execution result:`,
-          result
+          `[mcp_server.ts] Executing type "${textToType}" into #${elementId}`
         );
-        return JSON.stringify(result);
-      } catch (error: any) {
-        console.error(
-          `[mcp_server.ts] Error executing command '${args.command_string}':`,
-          error
+        result = await playwrightController.type(elementId, textToType);
+      } else if (selectMatch) {
+        const elementId = selectMatch[1];
+        const valueToSelect = selectMatch[2];
+        console.log(
+          `[mcp_server.ts] Executing select "${valueToSelect}" for #${elementId}`
         );
-        return JSON.stringify({
-          success: false,
-          message: `Error during command execution: ${error.message}`,
-          errorType: PlaywrightErrorType.ActionFailed,
-        });
+        result = await playwrightController.selectOption(
+          elementId,
+          valueToSelect
+        );
+      } else if (checkMatch) {
+        const elementId = checkMatch[1];
+        console.log(`[mcp_server.ts] Executing check on #${elementId}`);
+        result = await playwrightController.checkElement(elementId);
+      } else if (uncheckMatch) {
+        const elementId = uncheckMatch[1];
+        console.log(`[mcp_server.ts] Executing uncheck on #${elementId}`);
+        result = await playwrightController.uncheckElement(elementId);
+      } else if (chooseMatch) {
+        const elementId = chooseMatch[1];
+        const groupName = chooseMatch[2]; // This might be undefined if not provided
+        console.log(
+          `[mcp_server.ts] Executing choose on #${elementId}${
+            groupName ? " in group " + groupName : ""
+          }`
+        );
+        // We'll pass elementId as the primary identifier. PlaywrightController
+        // might use groupName if available to ensure it's choosing the correct radio from a named group.
+        // For now, the controller primarily uses the elementId of the specific radio.
+        result = await playwrightController.selectRadioButton(
+          elementId,
+          elementId
+        ); // valueToSelect can be the ID itself for radio
+      } else {
+        console.warn("[mcp_server.ts] Unrecognized command format.");
+        // Result is already set to invalid command string
       }
+
+      return JSON.stringify(result);
     },
   });
 }
 
-// --- New Core Server Function ---
+// --- Main Server Function (Exported) ---
+/**
+ * Initializes and starts the MCP server with the given options.
+ */
 export async function runMcpServer(options: McpServerOptions): Promise<void> {
-  try {
-    console.log("[mcp_server.ts] Starting runMcpServer with options:", options);
-    await initializeBrowserAndDependencies({
-      headlessBrowser: options.headlessBrowser,
-      targetUrl: options.targetUrl,
-    });
-
-    server = new FastMCP({
-      name: options.serverName || "McpUiBridgeServer",
-      version: options.serverVersion || "1.0.3",
-      instructions:
-        options.serverInstructions ||
-        "This server interacts with a web application. Use get_current_screen_data to see the page, get_current_screen_actions for possible interactions, and send_command to perform actions like 'click #id' or 'type #id \"text\"'.",
-    });
-
-    addCoreTools(server);
-
-    console.log(
-      `[mcp_server.ts] Attempting to start FastMCP server with SSE transport on port ${options.mcpPort}, endpoint ${options.mcpSseEndpoint}...`
+  // Validate server version format if provided
+  if (options.serverVersion && !/^\d+\.\d+\.\d+$/.test(options.serverVersion)) {
+    console.warn(
+      `[mcp_server.ts] Invalid serverVersion format: "${options.serverVersion}". It should be X.Y.Z. Using default.`
     );
-    server.start({
-      transportType: "sse",
-      sse: {
-        port: options.mcpPort,
-        endpoint: options.mcpSseEndpoint,
-      },
-    });
-    console.log(
-      `[mcp_server.ts] FastMCP Server started successfully with SSE on port ${options.mcpPort}, endpoint ${options.mcpSseEndpoint}.`
-    );
-    console.log(
-      `[mcp_server.ts] Target web app should be accessible at ${options.targetUrl}.`
-    );
-  } catch (error) {
-    console.error(
-      "[mcp_server.ts] CRITICAL: Failed to initialize or start FastMCP server in runMcpServer:",
-      error
-    );
-    if (playwrightController) {
-      console.log(
-        "[mcp_server.ts] Attempting to close Playwright browser due to error in runMcpServer..."
-      );
-      await playwrightController.close().catch((closeError) => {
-        console.error(
-          "[mcp_server.ts] Error closing Playwright browser during cleanup:",
-          closeError
-        );
-      });
-    }
-    // When used as a library, we might want to re-throw or handle error differently
-    // For now, if main() calls this, process.exit will be handled there.
-    // If called as a library, the caller should handle this promise rejection.
-    throw error;
+    // Optionally, you could throw an error or clear it to use FastMCP's internal default if it has one,
+    // or ensure your default below is used.
+    options.serverVersion = undefined; // Or set to a valid default like "0.1.0"
   }
+
+  // Ensure SSE endpoint starts with a slash if provided
+  if (options.sseEndpoint && !options.sseEndpoint.startsWith("/")) {
+    console.warn(
+      `[mcp_server.ts] McpServerOptions.sseEndpoint "${options.sseEndpoint}" must start with a '/'. Prepending '/'.`
+    );
+    options.sseEndpoint = `/${options.sseEndpoint}` as `/${string}`;
+  }
+
+  console.log(
+    `[mcp_server.ts] runMcpServer called with options: ${JSON.stringify({
+      ...options,
+      // Redact sensitive parts if any for logging, though current options are not sensitive
+    })}`
+  );
+
+  // Initialize browser and dependencies first
+  // Use provided options, falling back to defaults for headless and targetUrl if necessary
+  await initializeBrowserAndDependencies({
+    headlessBrowser:
+      options.headlessBrowser === undefined ? true : options.headlessBrowser, // Default to true (headless)
+    targetUrl: options.targetUrl, // targetUrl is mandatory in McpServerOptions
+  });
+
+  const { authenticateClient } = options;
+
+  server = new FastMCP({
+    name: options.serverName || "react-cli-mcp-server",
+    version: options.serverVersion || "0.1.0",
+    instructions: options.serverInstructions,
+    // Ping, health, roots can be configured here if defaults are not suitable
+    // ping: { enabled: true, intervalMs: 10000, logLevel: 'debug' },
+    // health: { enabled: true, path: '/healthz', message: 'healthy', status: 200 },
+    // roots: { enabled: true },
+
+    authenticate: authenticateClient
+      ? async (request: any) => {
+          // Ensure request.headers is an object, even if undefined initially
+          const headers =
+            typeof request.headers === "object" && request.headers !== null
+              ? request.headers
+              : {};
+
+          // Attempt to get source IP, common properties vary by environment/Node version
+          let sourceIp: string | undefined = undefined;
+          if (request.socket) {
+            // Standard Node HTTP server
+            sourceIp = request.socket.remoteAddress;
+          } else if (request.req?.socket) {
+            // Sometimes nested in frameworks
+            sourceIp = request.req.socket.remoteAddress;
+          } else if (request.ip) {
+            // Common in Express-like frameworks
+            sourceIp = request.ip;
+          }
+
+          const clientContext: ClientAuthContext = {
+            headers: headers as Record<string, string | string[] | undefined>,
+            sourceIp: sourceIp,
+          };
+
+          try {
+            const isAuthorized = await authenticateClient(clientContext);
+            if (isAuthorized) {
+              console.log(
+                `[mcp_server.ts] Client authenticated successfully. IP: ${
+                  sourceIp || "unknown"
+                }`
+              );
+              return { authenticatedUser: true, details: { sourceIp } }; // Session data
+            }
+            console.warn(
+              `[mcp_server.ts] Client authentication failed by custom callback. IP: ${
+                sourceIp || "unknown"
+              }`
+            );
+            throw new Response(null, {
+              status: 401,
+              statusText: "Unauthorized by custom authentication policy",
+            });
+          } catch (error: any) {
+            console.error(
+              `[mcp_server.ts] Error during 'authenticateClient' or auth failed. IP: ${
+                sourceIp || "unknown"
+              }. Error:`,
+              error
+            );
+            if (error instanceof Response) {
+              throw error; // Re-throw if it's already a Response object (e.g. thrown by the callback or above)
+            }
+            throw new Response(null, {
+              status: 401, // Or 500 if the error is truly internal to the auth callback
+              statusText:
+                "Unauthorized due to authentication error or policy failure",
+            });
+          }
+        }
+      : undefined,
+  });
+
+  addCoreTools(server);
+  addSendCommandTool(server);
+
+  const port = options.port || 8090;
+  const ssePath = options.sseEndpoint || "/sse"; // This is the intended path for clients to use
+
+  console.log(
+    `[mcp_server.ts] Starting FastMCP server on port ${port}. Configured client endpoint: ${ssePath}`
+  );
+
+  await server.start({
+    transportType: "httpStream",
+    httpStream: {
+      port: port,
+      endpoint: ssePath,
+    },
+  });
+
+  console.log(
+    `[mcp_server.ts] FastMCP server started successfully on port ${port}, HTTP stream endpoint ${ssePath}.`
+  );
 }
 
-// --- Main Execution Logic (for direct script execution) ---
+// --- Main Execution (for direct script run) ---
+// This allows the server to be started directly via `node src/mcp_server.js`
+// after compilation, useful for standalone operation or simple deployments.
 async function main() {
-  // Configuration resolution: Env Vars > Defaults
-  const targetUrl = process.env.MCP_TARGET_URL || "http://localhost:5173";
-  const headlessBrowser =
-    (process.env.MCP_HEADLESS_BROWSER || "false").toLowerCase() === "true";
-  const mcpPort = parseInt(process.env.MCP_PORT || "3000", 10);
-
-  let mcpSseEndpoint = process.env.MCP_SSE_ENDPOINT || "/mcp/sse";
-  if (!mcpSseEndpoint.startsWith("/")) {
-    mcpSseEndpoint = "/" + mcpSseEndpoint;
-  }
-  const finalSseEndpoint = mcpSseEndpoint as `/${string}`;
-
-  // Validate or default MCP_SERVER_VERSION
-  let serverVersionFromEnv = process.env.MCP_SERVER_VERSION;
-  const versionRegex = /^\d+\.\d+\.\d+$/;
-  if (serverVersionFromEnv && !versionRegex.test(serverVersionFromEnv)) {
-    console.warn(
-      `[mcp_server.ts] Invalid MCP_SERVER_VERSION format: "${serverVersionFromEnv}". Using default "1.0.3".`
+  console.log("[mcp_server.ts] Main function called.");
+  const targetUrl = process.env.MCP_TARGET_URL;
+  if (!targetUrl) {
+    console.error(
+      "[mcp_server.ts] CRITICAL: MCP_TARGET_URL environment variable is not set."
     );
-    serverVersionFromEnv = undefined; // Use default if format is wrong
+    process.exit(1);
   }
+
+  const headless = process.env.MCP_HEADLESS_BROWSER !== "false"; // Default to true (headless)
+  const port = parseInt(process.env.MCP_PORT || "8090", 10);
+  let sseEndpoint = process.env.MCP_SSE_ENDPOINT || "/sse";
+  if (!sseEndpoint.startsWith("/")) {
+    console.warn(
+      `[mcp_server.ts] MCP_SSE_ENDPOINT "${sseEndpoint}" must start with a '/'. Prepending '/'.`
+    );
+    sseEndpoint = `/${sseEndpoint}`;
+  }
+
+  const serverName =
+    process.env.MCP_SERVER_NAME || "react-cli-mcp-server (direct run)";
+  const serverVersionStr = process.env.MCP_SERVER_VERSION || "0.1.0";
+  let serverVersion: `${number}.${number}.${number}` | undefined = undefined;
+  if (/^\d+\.\d+\.\d+$/.test(serverVersionStr)) {
+    serverVersion = serverVersionStr as `${number}.${number}.${number}`;
+  } else {
+    console.warn(
+      `[mcp_server.ts] Invalid MCP_SERVER_VERSION format: "${serverVersionStr}". Using default.`
+    );
+  }
+
+  const serverInstructions =
+    process.env.MCP_SERVER_INSTRUCTIONS ||
+    "Default instructions for react-cli-mcp.";
 
   const options: McpServerOptions = {
     targetUrl,
-    headlessBrowser,
-    mcpPort,
-    mcpSseEndpoint: finalSseEndpoint,
-    serverName: process.env.MCP_SERVER_NAME || "McpUiBridgeServerEnv",
-    serverVersion:
-      (serverVersionFromEnv as `${number}.${number}.${number}`) || "1.0.3",
-    serverInstructions: process.env.MCP_SERVER_INSTRUCTIONS, // Will use FastMCP default if undefined
+    headlessBrowser: headless,
+    port: port,
+    sseEndpoint: sseEndpoint as `/${string}`,
+    serverName: serverName,
+    serverVersion: serverVersion,
+    serverInstructions: serverInstructions,
+    // authenticateClient can be added here if configured via environment variables,
+    // though it's more complex for a direct run without code changes.
   };
 
   try {
+    console.log("[mcp_server.ts] Attempting to run MCP server from main()...");
     await runMcpServer(options);
-    // Keep alive, server.start is non-blocking for SSE
-    console.log("[mcp_server.ts] Main function completed, server is running.");
   } catch (error) {
-    console.error("[mcp_server.ts] Error in main execution:", error);
-    process.exit(1); // Exit if server fails to start
+    console.error("[mcp_server.ts] Failed to run MCP server from main:", error);
+    process.exit(1);
   }
 }
 
-// Graceful shutdown
-let isShuttingDown = false;
+// Graceful shutdown handler
 async function gracefulShutdown(signal: string) {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
   console.log(
-    `\n[mcp_server.ts] Received ${signal}. Starting graceful shutdown...`
+    `[mcp_server.ts] Received ${signal}. Shutting down gracefully...`
   );
-
-  // FastMCP server itself doesn't have an explicit server.stop() in the version used by docs.
-  // We'll focus on cleaning up resources like Playwright.
-
-  if (playwrightController) {
-    console.log("[mcp_server.ts] Closing Playwright browser...");
+  if (server && typeof (server as any).close === "function") {
     try {
-      await playwrightController.close();
-      console.log("[mcp_server.ts] Playwright browser closed successfully.");
-    } catch (error) {
-      console.error("[mcp_server.ts] Error closing Playwright browser:", error);
+      console.log("[mcp_server.ts] Closing FastMCP server...");
+      await (server as any).close();
+      console.log("[mcp_server.ts] FastMCP server closed.");
+    } catch (e) {
+      console.error("[mcp_server.ts] Error closing FastMCP server:", e);
     }
+  } else if (server) {
+    console.warn(
+      "[mcp_server.ts] server.close() method not found or not a function. FastMCP server might not have a dedicated close method or it's not being correctly typed."
+    );
   }
 
-  console.log("[mcp_server.ts] Graceful shutdown completed. Exiting.");
+  if (playwrightController) {
+    try {
+      console.log("[mcp_server.ts] Closing Playwright browser...");
+      await playwrightController.close();
+      console.log("[mcp_server.ts] Playwright browser closed.");
+    } catch (e) {
+      console.error("[mcp_server.ts] Error closing Playwright browser:", e);
+    }
+  }
+  console.log("[mcp_server.ts] Shutdown complete.");
   process.exit(0);
 }
 
-// Only run main() if the script is executed directly
-// ESM-compatible way to check if the script is the main module
-if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM")); // kill
-  process.on("SIGQUIT", () => gracefulShutdown("SIGQUIT")); // Ctrl+\
-  main();
-}
+// Listen for shutdown signals
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
-// To ensure this file is treated as a module and allow exporting McpServerOptions and runMcpServer.
-export {};
+// Check if the script is being run directly
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  console.log("[mcp_server.ts] Script is being run directly. Calling main().");
+  main().catch((err) => {
+    // Catch any unhandled errors from main() itself, though it has its own try/catch
+    console.error(
+      "[mcp_server.ts] Unhandled error from direct main() execution:",
+      err
+    );
+    process.exit(1);
+  });
+}

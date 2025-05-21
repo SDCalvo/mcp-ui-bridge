@@ -232,19 +232,45 @@ The `DomParser` currently:
 
 - **Phase 3.5: Deployment & Production Considerations**
 
-  - **Goal**: Ensure `mcp-ui-bridge` can be reliably and securely used with deployed web applications, addressing challenges like authentication, network conditions, and headless operation.
+  - **Goal**: Ensure `react-cli-mcp` can be reliably and securely used with deployed web applications, addressing challenges like authentication, network conditions, and headless operation.
 
-  - [ ] **Task 3.5.1**: Strategy for Authentication/Authorization
-    - [ ] Research and define mechanisms for `mcp-ui-bridge` to handle application logins (e.g., enabling LLM-driven login via `data-mcp-*` annotated forms).
-    - [ ] Document security best practices for handling credentials.
-    - [ ] Consider flows where the application might already have an active session if `mcp-ui-bridge` attaches to an existing authenticated browser context (advanced).
+  - [ ] **Task 3.5.1**: MCP Server Client Authentication
+
+    - **Strategy**: Implement a flexible, user-defined authentication mechanism for securing the MCP server exposed by `react-cli-mcp`. This allows library users to integrate their own authentication logic.
+    - **Mechanism**:
+      - Introduce a new optional property `authenticateClient` to the `McpServerOptions` interface.
+      - This property will accept an asynchronous callback function: `type AuthenticateClientCallback = (context: ClientAuthContext) => Promise<boolean>;`
+      - The `ClientAuthContext` interface will be defined as:
+        ```typescript
+        interface ClientAuthContext {
+          headers: Record<string, string | string[] | undefined>; // HTTP headers from incoming request
+          sourceIp?: string; // Source IP address of the request
+          // Potentially other relevant request details
+        }
+        ```
+      - **Integration with FastMCP**:
+        - `react-cli-mcp` will use the `authenticate` option provided by the `FastMCP` library.
+        - The `runMcpServer` function will internally map the user-provided `authenticateClient` callback to the format expected by `FastMCP`.
+        - For each incoming request to the MCP server:
+          - If `authenticateClient` is provided, it will be invoked with a populated `ClientAuthContext`.
+          - **Success**: If the user's `authenticateClient` callback returns `Promise<true>`, `react-cli-mcp` will signal success to FastMCP by returning a simple object (e.g., `{ authenticatedUser: true }`). This object's content can be accessed via `context.session` in FastMCP tool handlers if needed.
+          - **Failure**: If the user's `authenticateClient` callback returns `Promise<false>`, `react-cli-mcp` will signal failure to FastMCP by `throw`ing a `new Response(null, { status: 401, statusText: "Unauthorized by custom authentication policy" })`. The MCP connection will be rejected.
+          - **Errors in Callback**: If the user's `authenticateClient` callback itself throws an error, `react-cli-mcp` will log this error and treat it as an authentication failure (throwing a 401 Response as above).
+          - **No Callback Provided**: If `authenticateClient` is not provided in `McpServerOptions`, the MCP server will operate in an "open" mode, without performing client authentication checks.
+    - **Documentation**:
+      - Clearly document the `authenticateClient` option, the `ClientAuthContext` interface, and the expected behavior of the callback.
+      - Provide examples of how to implement `authenticateClient` for common scenarios (e.g., validating a bearer token from the `Authorization` header, checking a custom API key header).
+      - Emphasize the necessity of HTTPS when transmitting sensitive credentials to be evaluated by the callback.
+
+  - [ ] **Task 3.5.1.1**: Implement User-Driven Application Login (Existing - for clarity, this is about the target app, not the MCP server)
+    - [ ] Research and define mechanisms for `react-cli-mcp` to handle application logins (e.g., enabling LLM-driven login via `data-mcp-*` annotated forms). _(This is distinct from MCP server authentication)_
   - [ ] **Task 3.5.2**: Robustness for Deployed Environments
     - [ ] Implement configurable timeouts and retry mechanisms for Playwright actions to handle network latency.
     - [ ] Enhance error reporting for network issues, unexpected application states, or element-not-found scenarios common in dynamic deployed apps.
     - [ ] Thoroughly test and ensure stability of all core functionalities in headless browser mode.
   - [ ] **Task 3.5.3**: Session Management & State Persistence
     - [ ] Investigate strategies for handling long-lived interactions and potential session expiry/re-authentication.
-    - [ ] Explore if/how `mcp-ui-bridge` might need to persist or restore interaction state across tool restarts when targeting a deployed app (e.g., current URL, basic context).
+    - [ ] Explore if/how `react-cli-mcp` might need to persist or restore interaction state across tool restarts when targeting a deployed app (e.g., current URL, basic context).
   - [ ] **Task 3.5.4**: Configuration for Deployed Targets
     - [ ] Ensure CLI options or configuration files robustly handle various deployment URLs (HTTPS, ports, paths).
     - [ ] Consider parameters for proxies or specific browser launch arguments needed for certain deployed environments.
@@ -253,7 +279,7 @@ The `DomParser` currently:
     - [ ] Implement safeguards or clear warnings related to interacting with sensitive data or critical functionalities in a deployed app.
     - [ ] Document secure operational practices for users.
   - [ ] **Task 3.5.6**: Documentation for Production/Deployed Use Cases
-    - [ ] Create comprehensive documentation detailing how to set up and use `mcp-ui-bridge` against production or staging environments.
+    - [ ] Create comprehensive documentation detailing how to set up and use `react-cli-mcp` against production or staging environments.
     - [ ] Include examples and best practices for authentication, handling dynamic content, and troubleshooting common issues in deployed settings.
 
 - **Future Phases (Beyond initial scope)**:
