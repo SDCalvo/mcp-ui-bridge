@@ -678,14 +678,14 @@ export async function runMcpServer(options: McpServerOptions): Promise<void> {
     });
 
     server = new FastMCP({
-      name: options.serverName || "ReactCliConversorServer",
-      version: options.serverVersion || "1.0.3", // Default to a valid X.Y.Z format
+      name: options.serverName || "McpUiBridgeServer",
+      version: options.serverVersion || "1.0.3",
       instructions:
         options.serverInstructions ||
-        "This server interacts with a React web application. Use get_current_screen_data to see the page, get_current_screen_actions for possible interactions, get_page_screenshot to get a visual of the page, and send_command to perform actions like 'click #id' or 'type #id \"text\"'.",
+        "This server interacts with a web application. Use get_current_screen_data to see the page, get_current_screen_actions for possible interactions, and send_command to perform actions like 'click #id' or 'type #id \"text\"'.",
     });
 
-    addCoreTools(server); // Add the defined tools to this server instance
+    addCoreTools(server);
 
     console.log(
       `[mcp_server.ts] Attempting to start FastMCP server with SSE transport on port ${options.mcpPort}, endpoint ${options.mcpSseEndpoint}...`
@@ -701,7 +701,7 @@ export async function runMcpServer(options: McpServerOptions): Promise<void> {
       `[mcp_server.ts] FastMCP Server started successfully with SSE on port ${options.mcpPort}, endpoint ${options.mcpSseEndpoint}.`
     );
     console.log(
-      `[mcp_server.ts] Target React app should be accessible at ${options.targetUrl}.`
+      `[mcp_server.ts] Target web app should be accessible at ${options.targetUrl}.`
     );
   } catch (error) {
     console.error(
@@ -755,7 +755,7 @@ async function main() {
     headlessBrowser,
     mcpPort,
     mcpSseEndpoint: finalSseEndpoint,
-    serverName: process.env.MCP_SERVER_NAME || "ReactCliConversorServerEnv",
+    serverName: process.env.MCP_SERVER_NAME || "McpUiBridgeServerEnv",
     serverVersion:
       (serverVersionFromEnv as `${number}.${number}.${number}`) || "1.0.3",
     serverInstructions: process.env.MCP_SERVER_INSTRUCTIONS, // Will use FastMCP default if undefined

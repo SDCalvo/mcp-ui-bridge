@@ -1,5 +1,5 @@
 {
-  "name": "react-cli-mcp",
+  "name": "mcp-ui-bridge",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/main.js",

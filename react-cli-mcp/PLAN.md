@@ -1,14 +1,14 @@
-# react-cli-mcp: Project Plan
+# mcp-ui-bridge: Project Plan
 
 ## 1. Project Goal & Scope
 
-- **Primary Goal**: To create a tool (`react-cli-mcp`) that enables a Large Language Model (LLM) to interact with React-based web applications through a terminal-like interface using the Model Context Protocol (MCP).
+- **Primary Goal**: To create a tool (`mcp-ui-bridge`) that enables a Large Language Model (LLM) to interact with web applications through a terminal-like interface using the Model Context Protocol (MCP).
 - **Core Functionality**:
-  - Parse a target React application to identify interactive elements and their functionalities.
-  - Generate a Command Line Interface (CLI) representation of the React application's interactive parts.
-  - Facilitate communication between the LLM and the React app via this CLI, using MCP for structured data exchange.
-- **Initial Scope (Todo App)**:
-  - Successfully parse the existing Todo React application.
+  - Parse a target web application to identify interactive elements and their functionalities.
+  - Generate a Command Line Interface (CLI) representation of the web application's interactive parts.
+  - Facilitate communication between the LLM and the web app via this CLI, using MCP for structured data exchange.
+- **Initial Scope (Sample Todo App)**:
+  - Successfully parse the existing Todo sample application.
   - Identify interactive elements (input fields, buttons, checkboxes) based on `data-mcp-*` attributes.
   - Identify data display areas (e.g., lists of items, item content) based on `data-mcp-*` attributes.
   - Expose actions like:
@@ -22,23 +22,23 @@
 
 ## 2. Core Components & High-Level Architecture
 
-The `react-cli-mcp` system will consist of the following main components:
+The `mcp-ui-bridge` system will consist of the following main components:
 
-- **React App Parser (`DomParser`)**:
-  - Responsible for analyzing the structure and interactive elements of the target React application using Playwright.
+- **Web App Parser (`DomParser`)**:
+  - Responsible for analyzing the structure and interactive elements of the target web application using Playwright.
   - Identifies elements marked with various `data-mcp-*` attributes.
   - Extracts relevant information (type, current state, labels, associated actions, displayed text/data).
 - **CLI Generation & Interaction Module / MCP Agent Core (`main.ts`, `PlaywrightController`)**:
-  - This module is the heart of `react-cli-mcp`. It dynamically understands the current state of the React application via the `DomParser`.
+  - This module is the heart of `mcp-ui-bridge`. It dynamically understands the current state of the web application via the `DomParser`.
   - Provides a command-line interface for interacting with the application.
   - Manages the state of the interaction, including the current "view" or context.
-  - Executes actions on the React app using `PlaywrightController`, based on commands.
+  - Executes actions on the web app using `PlaywrightController`, based on commands.
 - **MCP Integration Layer (Future)**:
   - Will expose a stable set of generic MCP tools (e.g., `get_current_screen_actions`, `get_current_screen_data`, `send_command`).
   - Will format messages according to MCP.
 - **Server/Runtime Environment**:
-  - Hosts the `react-cli-mcp` tool.
-  - Runs a headless or headed browser (Playwright) to interact with the React application.
+  - Hosts the `mcp-ui-bridge` tool.
+  - Runs a headless or headed browser (Playwright) to interact with the web application.
 
 ### 2.1. Data Attributes for MCP Interaction
 
@@ -75,21 +75,21 @@ The `DomParser` currently:
 
 ### High-Level Flow (Current CLI - to be adapted for MCP):
 
-1.  **Initialization**: `react-cli-mcp` starts, `PlaywrightController` launches Playwright, navigates to the target React app.
+1.  **Initialization**: `mcp-ui-bridge` starts, `PlaywrightController` launches Playwright, navigates to the target web app.
 2.  **User Assesses Current Screen**:
     - The tool runs an initial scan using `DomParser` and displays available interactive elements, display containers, regions, etc. (`displayCurrentScreenState` in `main.ts`).
 3.  **User Decides and Enters Command**:
     - User types a command (e.g., `click <id>`, `type <id> "text"`, `state <id>`, `scan`).
-4.  **`react-cli-mcp` Executes Action**:
+4.  **`mcp-ui-bridge` Executes Action**:
     - `main.ts` parses the command.
     - `PlaywrightController` methods execute the action (e.g., `clickElement`, `typeInElement`).
     - `getElementState` can be used to query specific element details.
-5.  **`react-cli-mcp` Observes Result & Updates State**:
-    - The React app responds.
+5.  **`mcp-ui-bridge` Observes Result & Updates State**:
+    - The web app responds.
     - The CLI typically re-scans or indicates that a `scan` might be needed to see the full effect of an action.
 6.  **Loop**: User continues interacting.
 
-## 3. React App Parser Details (`DomParser`)
+## 3. Web App Parser Details (`DomParser`)
 
 - **Strategy**:
   - **Primary Method**: Utilizes the `data-mcp-*` attributes listed in Section 2.1. The parser scans the live DOM via Playwright.
@@ -173,7 +173,7 @@ The `DomParser` currently:
 
 - **Phase 3.3: MCP Integration**
 
-  - [ ] **Task 3.3.1**: Define MCP Message Schemas
+  - [x] **Task 3.3.1**: Define MCP Message Schemas
     - [ ] Draft JSON schemas for `get_current_screen_actions`, `get_current_screen_data`, `send_command` (requests & responses). _(Partially addressed by structuring tool return JSON; formal schemas for client validation TBD)_
   - [x] **Task 3.3.2**: Implement MCP Layer
     - [x] Create modules/classes for handling MCP communication. _(Achieved by refactoring `mcp_server.ts` into a configurable module)_
@@ -198,11 +198,11 @@ The `DomParser` currently:
 
 - **Phase 3.5: Package as a Turnkey MCP Server/Tool**
 
-  - **Goal**: Package the `react-cli-mcp` system into an easy-to-use tool. Developers can install and run this tool against their React application, which will automatically start the DOM parser, the MCP server (for LLM interaction), and optionally the interactive CLI (for debugging/direct use).
+  - **Goal**: Package the `mcp-ui-bridge` system into an easy-to-use tool. Developers can install and run this tool against their web application, which will automatically start the DOM parser, the MCP server (for LLM interaction), and optionally the interactive CLI (for debugging/direct use).
 
   - [ ] **Task 3.4.1**: Create Configurable Entry Points & Core Abstraction
 
-    - [ ] Define clear entry points for starting the system (e.g., a primary CLI command like `npx react-cli-mcp connect --url <app-url>` and/or a simple programmatic function like `runMcpServer({targetUrl: '<app-url>'})`).
+    - [ ] Define clear entry points for starting the system (e.g., a primary CLI command like `npx mcp-ui-bridge connect --url <app-url>` and/or a simple programmatic function like `runMcpServer({targetUrl: '<app-url>'})`).
     - [ ] Abstract the core application logic (Playwright launching, DOM parsing, MCP server startup, CLI loop) into a primary class or module that can be invoked by these entry points.
     - [ ] Implement configuration options (e.g., target URL, headless mode, MCP server port, enable/disable interactive CLI mode) passable via CLI arguments or function parameters.
     - [ ] Ensure the MCP server component can be started and run independently of the interactive `inquirer`-based CLI prompt, allowing for server-only operation.
@@ -221,7 +221,7 @@ The `DomParser` currently:
 
   - [ ] **Task 3.4.4**: Tool Usage Documentation
 
-    - [ ] Update `README.md` with clear instructions on how to install and run the `react-cli-mcp` tool against a React application.
+    - [ ] Update `README.md` with clear instructions on how to install and run the `mcp-ui-bridge` tool against a web application.
     - [ ] Document all CLI commands, options, and any programmatic API if offered.
     - [ ] Provide examples of how to connect an MCP client to the server started by the tool.
     - [ ] Add TSDoc comments to any programmatically exposed functions/classes for auto-generated API documentation (e.g., using TypeDoc) if applicable.
@@ -232,19 +232,19 @@ The `DomParser` currently:
 
 - **Phase 3.5: Deployment & Production Considerations**
 
-  - **Goal**: Ensure `react-cli-mcp` can be reliably and securely used with deployed web applications, addressing challenges like authentication, network conditions, and headless operation.
+  - **Goal**: Ensure `mcp-ui-bridge` can be reliably and securely used with deployed web applications, addressing challenges like authentication, network conditions, and headless operation.
 
   - [ ] **Task 3.5.1**: Strategy for Authentication/Authorization
-    - [ ] Research and define mechanisms for `react-cli-mcp` to handle application logins (e.g., enabling LLM-driven login via `data-mcp-*` annotated forms).
+    - [ ] Research and define mechanisms for `mcp-ui-bridge` to handle application logins (e.g., enabling LLM-driven login via `data-mcp-*` annotated forms).
     - [ ] Document security best practices for handling credentials.
-    - [ ] Consider flows where the application might already have an active session if `react-cli-mcp` attaches to an existing authenticated browser context (advanced).
+    - [ ] Consider flows where the application might already have an active session if `mcp-ui-bridge` attaches to an existing authenticated browser context (advanced).
   - [ ] **Task 3.5.2**: Robustness for Deployed Environments
     - [ ] Implement configurable timeouts and retry mechanisms for Playwright actions to handle network latency.
     - [ ] Enhance error reporting for network issues, unexpected application states, or element-not-found scenarios common in dynamic deployed apps.
     - [ ] Thoroughly test and ensure stability of all core functionalities in headless browser mode.
   - [ ] **Task 3.5.3**: Session Management & State Persistence
     - [ ] Investigate strategies for handling long-lived interactions and potential session expiry/re-authentication.
-    - [ ] Explore if/how `react-cli-mcp` might need to persist or restore interaction state across tool restarts when targeting a deployed app (e.g., current URL, basic context).
+    - [ ] Explore if/how `mcp-ui-bridge` might need to persist or restore interaction state across tool restarts when targeting a deployed app (e.g., current URL, basic context).
   - [ ] **Task 3.5.4**: Configuration for Deployed Targets
     - [ ] Ensure CLI options or configuration files robustly handle various deployment URLs (HTTPS, ports, paths).
     - [ ] Consider parameters for proxies or specific browser launch arguments needed for certain deployed environments.
@@ -253,7 +253,7 @@ The `DomParser` currently:
     - [ ] Implement safeguards or clear warnings related to interacting with sensitive data or critical functionalities in a deployed app.
     - [ ] Document secure operational practices for users.
   - [ ] **Task 3.5.6**: Documentation for Production/Deployed Use Cases
-    - [ ] Create comprehensive documentation detailing how to set up and use `react-cli-mcp` against production or staging environments.
+    - [ ] Create comprehensive documentation detailing how to set up and use `mcp-ui-bridge` against production or staging environments.
     - [ ] Include examples and best practices for authentication, handling dynamic content, and troubleshooting common issues in deployed settings.
 
 - **Future Phases (Beyond initial scope)**:
@@ -279,12 +279,13 @@ The `DomParser` currently:
 - **Functional MCP Server Implementation (`Phase 3.3`):**
   - Successfully refactored `src/mcp_server.ts` to be a fully functional MCP server using `FastMCP` (TypeScript version).
   - Integrated `PlaywrightController` to manage browser instances and interactions.
-  - Integrated `DomParser` to analyze the live DOM of the target React application based on `data-mcp-*` attributes.
+  - Integrated `DomParser` to analyze the live DOM of the target web application based on `data-mcp-*` attributes.
   - The `get_current_screen_data` tool now correctly fetches and returns structured data and interactive elements from the live web page.
   - The `get_current_screen_actions` tool now correctly derives actionable commands and hints from the interactive elements.
+  - The `get_page_screenshot` tool was implemented to capture page screenshots as base64 strings, but it is currently not exposed via the MCP server as the LLM cannot directly interpret images. The code for this tool remains available.
   - The `send_command` tool can now parse `click #id` and `type #id "text"` commands, execute them using `PlaywrightController`, and return the action's outcome.
   - The server correctly launches Playwright, navigates to the target URL (configurable via `MCP_TARGET_URL`), and handles basic interactions.
-  - Tested end-to-end flow: MCP client calls tools -> MCP server interacts with React app via Playwright -> React app state changes -> MCP server reports new state.
+  - Tested end-to-end flow: MCP client calls tools -> MCP server interacts with web app via Playwright -> web app state changes -> MCP server reports new state.
 
 **Potential Next Steps:**
 
@@ -309,7 +310,7 @@ The `DomParser` currently:
       - Or, will the `mcp_server.ts` become the sole entry point for the tool, perhaps with a command-line flag to enable an interactive diagnostic mode? (This aligns with `Phase 3.5, Task 3.4.1`).
 7.  **Documentation (`Task 3.4.4`):**
     - Start documenting how to run the MCP server and connect a generic MCP client to it.
-    - Document the expected `data-mcp-*` attributes for React app developers.
+    - Document the expected `data-mcp-*` attributes for web app developers.
 8.  **Configuration Improvements:**
     - Consider a configuration file (e.g., JSON or YAML) for server settings (target URL, port, headless mode, timeouts) as an alternative or supplement to environment variables for easier management.
 
