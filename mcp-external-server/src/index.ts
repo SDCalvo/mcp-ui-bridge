@@ -8,7 +8,7 @@ async function main() {
   console.log("Starting MCP External Server...");
 
   // TODO: Set this to true or false to simulate auth success/failure
-  const MANUALLY_ALLOW_CONNECTION = true;
+  const MANUALLY_ALLOW_CONNECTION = false;
 
   const options: McpServerOptions = {
     targetUrl: process.env.MCP_TARGET_URL || "http://localhost:5173", // Your frontend URL

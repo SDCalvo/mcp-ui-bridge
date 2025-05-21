@@ -200,93 +200,26 @@ The `DomParser` currently:
 
   - **Goal**: Package the `mcp-ui-bridge` system into an easy-to-use tool. Developers can install and run this tool against their web application, which will automatically start the DOM parser, the MCP server (for LLM interaction), and optionally the interactive CLI (for debugging/direct use).
 
-  - [x] **Task 3.4.1**: Create Configurable Entry Points & Core Abstraction
+  - [x] **Task 3.5.1**: Create configurable entry points (CLI command, programmatic API).
+    - [x] `runMcpServer(options: McpServerOptions)` provides a programmatic API.
+    - [x] `src/main.ts` acts as a CLI entry point using environment variables.
+  - [x] **Task 3.5.2**: Package for easy distribution (e.g., via npm).
+    - [x] Configured `package.json` in `react-cli-mcp` for publishing as `mcp-ui-bridge`.
+    - [x] Added `README.md` (for npm) and `LICENSE` file to `react-cli-mcp`.
+    - [x] **Successfully published `mcp-ui-bridge@0.1.0` to npm.**
+    - [x] **Tested by updating `mcp-external-server` to use the npm package, confirming functionality.**
+  - [ ] **Task 3.5.3**: Improve documentation for tool usage and `data-mcp-*` attribute specification.
+    - [x] Updated main `README.md` with detailed usage, `data-mcp-*` attributes, and `mcp-external-server` instructions.
+    - [x] Updated `react-cli-mcp/README.md` (for npm) with comprehensive library usage details.
 
-    - [x] Define clear entry points for starting the system (e.g., a primary CLI command like `npx mcp-ui-bridge connect --url <app-url>` and/or a simple programmatic function like `runMcpServer({targetUrl: '<app-url>'})`). _(Implemented `runMcpServer` for programmatic use)_
-    - [x] Abstract the core application logic (Playwright launching, DOM parsing, MCP server startup, CLI loop) into a primary class or module that can be invoked by these entry points. _(`mcp_server.ts` and its `runMcpServer` function)_
-    - [x] Implement configuration options (e.g., target URL, headless mode, MCP server port, enable/disable interactive CLI mode) passable via CLI arguments or function parameters. _(Implemented via `McpServerOptions` for programmatic use)_
-    - [x] Ensure the MCP server component can be started and run independently of the interactive `inquirer`-based CLI prompt, allowing for server-only operation. _(This is the current primary mode of operation)_
-
-  - [x] **Task 3.4.2**: Configure `package.json` for Distribution
-
-    - [ ] Set `bin` field for CLI command(s). _(Not yet, as we're focusing on library usage first)_
-    - [x] Set `main`, `module`, and `types` fields to point to appropriate library entry points if a programmatic API is also offered. _(Set `main` to `dist/mcp_server.js` and `types` to `dist/mcp_server.d.ts`)_
-    - [x] Define `files` to include necessary distributable files (compiled JS, type definitions). _(Added `dist`, `README.md`, `LICENSE`)_
-    - [x] Add relevant metadata (keywords, author, license, repository URL, description). _(Added keywords, author, description, repository; assuming LICENSE will be added manually)_
-
-  - [x] **Task 3.4.3**: Build Process for Distributable Tool
-
-    - [x] Ensure `tsc` build process in `tsconfig.json` and `package.json` scripts correctly compiles the project for distribution, including generating necessary declaration files. _(Added `declaration: true`, `declarationMap: true`, `sourceMap: true` to `tsconfig.json`; updated build scripts)_
-    - [x] Verify the build output works as expected when installed/run in a different project. _(Successfully tested using `npm link` and `file:` path in the test frontend project)_
-
-  - [x] **Task 3.4.4**: Tool Usage Documentation
-
-    - [x] Update `README.md` with clear instructions on how to install and run the `mcp-ui-bridge` tool against a web application. _(Created `react-cli-mcp/README.md` with installation and programmatic usage instructions)_
-    - [x] Document all CLI commands, options, and any programmatic API if offered. _(Programmatic API `runMcpServer` and `McpServerOptions` documented in README)_
-    - [x] Provide examples of how to connect an MCP client to the server started by the tool. _(Example usage script `frontend/scripts/launch-mcp.ts` created and README describes its purpose)_
-    - [ ] Add TSDoc comments to any programmatically exposed functions/classes for auto-generated API documentation (e.g., using TypeDoc) if applicable. _(Basic TSDoc comments exist, can be expanded)_
-
-  - [ ] **Task 3.4.5**: (Optional) Publish to npm
-    - [ ] If intended for public use, prepare for and publish the package to the npm registry.
-    - [ ] Set up npm scripts for versioning and publishing.
-
-- **Phase 3.5: Deployment & Production Considerations**
-
-  - **Goal**: Ensure `react-cli-mcp` can be reliably and securely used with deployed web applications, addressing challenges like authentication, network conditions, and headless operation.
-
-  - [ ] **Task 3.5.1**: MCP Server Client Authentication
-
-    - **Strategy**: Implement a flexible, user-defined authentication mechanism for securing the MCP server exposed by `react-cli-mcp`. This allows library users to integrate their own authentication logic.
-    - **Mechanism**:
-      - Introduce a new optional property `authenticateClient` to the `McpServerOptions` interface.
-      - This property will accept an asynchronous callback function: `type AuthenticateClientCallback = (context: ClientAuthContext) => Promise<boolean>;`
-      - The `ClientAuthContext` interface will be defined as:
-        ```typescript
-        interface ClientAuthContext {
-          headers: Record<string, string | string[] | undefined>; // HTTP headers from incoming request
-          sourceIp?: string; // Source IP address of the request
-          // Potentially other relevant request details
-        }
-        ```
-      - **Integration with FastMCP**:
-        - `react-cli-mcp` will use the `authenticate` option provided by the `FastMCP` library.
-        - The `runMcpServer` function will internally map the user-provided `authenticateClient` callback to the format expected by `FastMCP`.
-        - For each incoming request to the MCP server:
-          - If `authenticateClient` is provided, it will be invoked with a populated `ClientAuthContext`.
-          - **Success**: If the user's `authenticateClient` callback returns `Promise<true>`, `react-cli-mcp` will signal success to FastMCP by returning a simple object (e.g., `{ authenticatedUser: true }`). This object's content can be accessed via `context.session` in FastMCP tool handlers if needed.
-          - **Failure**: If the user's `authenticateClient` callback returns `Promise<false>`, `react-cli-mcp` will signal failure to FastMCP by `throw`ing a `new Response(null, { status: 401, statusText: "Unauthorized by custom authentication policy" })`. The MCP connection will be rejected.
-          - **Errors in Callback**: If the user's `authenticateClient` callback itself throws an error, `react-cli-mcp` will log this error and treat it as an authentication failure (throwing a 401 Response as above).
-          - **No Callback Provided**: If `authenticateClient` is not provided in `McpServerOptions`, the MCP server will operate in an "open" mode, without performing client authentication checks.
-    - **Documentation**:
-      - Clearly document the `authenticateClient` option, the `ClientAuthContext` interface, and the expected behavior of the callback.
-      - Provide examples of how to implement `authenticateClient` for common scenarios (e.g., validating a bearer token from the `Authorization` header, checking a custom API key header).
-      - Emphasize the necessity of HTTPS when transmitting sensitive credentials to be evaluated by the callback.
-
-  - [ ] **Task 3.5.1.1**: Implement User-Driven Application Login (Existing - for clarity, this is about the target app, not the MCP server)
-    - [ ] Research and define mechanisms for `react-cli-mcp` to handle application logins (e.g., enabling LLM-driven login via `data-mcp-*` annotated forms). _(This is distinct from MCP server authentication)_
-  - [ ] **Task 3.5.2**: Robustness for Deployed Environments
-    - [ ] Implement configurable timeouts and retry mechanisms for Playwright actions to handle network latency.
-    - [ ] Enhance error reporting for network issues, unexpected application states, or element-not-found scenarios common in dynamic deployed apps.
-    - [ ] Thoroughly test and ensure stability of all core functionalities in headless browser mode.
-  - [ ] **Task 3.5.3**: Session Management & State Persistence
-    - [ ] Investigate strategies for handling long-lived interactions and potential session expiry/re-authentication.
-    - [ ] Explore if/how `react-cli-mcp` might need to persist or restore interaction state across tool restarts when targeting a deployed app (e.g., current URL, basic context).
-  - [ ] **Task 3.5.4**: Configuration for Deployed Targets
-    - [ ] Ensure CLI options or configuration files robustly handle various deployment URLs (HTTPS, ports, paths).
-    - [ ] Consider parameters for proxies or specific browser launch arguments needed for certain deployed environments.
-  - [ ] **Task 3.5.5**: Security Audit and Hardening
-    - [ ] Review potential security vulnerabilities (e.g., command injection if not careful with how LLM inputs are translated to actions, unintended data exposure).
-    - [ ] Implement safeguards or clear warnings related to interacting with sensitive data or critical functionalities in a deployed app.
-    - [ ] Document secure operational practices for users.
-  - [ ] **Task 3.5.6**: Documentation for Production/Deployed Use Cases
-    - [ ] Create comprehensive documentation detailing how to set up and use `react-cli-mcp` against production or staging environments.
-    - [ ] Include examples and best practices for authentication, handling dynamic content, and troubleshooting common issues in deployed settings.
-
-- **Future Phases (Beyond initial scope)**:
-  - Support for complex navigation and state tracking.
-  - AST-based parsing as a complementary approach.
-  - Advanced error recovery and retries.
-  - Comprehensive documentation.
+- **Phase 3.5.1 (was 3.6): MCP Server Client Authentication** (Moved and renumbered for clarity)
+  - **Chosen Approach**: Custom user-defined asynchronous authentication callback.
+    - [x] Added `authenticateClient?: (context: ClientAuthContext) => Promise<boolean>` to `McpServerOptions`.
+    - [x] `ClientAuthContext` provides `headers` and `sourceIp`.
+    - [x] Integrated with `FastMCP`'s `authenticate` option.
+    - [x] If callback returns `false` or throws, FastMCP denies connection (401/500).
+    - [x] `mcp-external-server` includes a toy implementation (`MANUALLY_ALLOW_CONNECTION`) for testing this.
+    - [x] Successfully tested auth success and failure scenarios.
 
 ## 8. Key Challenges & Risks
 
