@@ -1,8 +1,10 @@
 import { chromium, Browser, Page, BrowserContext, Locator } from "playwright";
 import { DataAttributes } from "../types/attributes.js";
-import { InteractiveElementInfo } from "../types/index.js";
-// Import centralized types
-import { ActionResult, PlaywrightErrorType } from "./types.js";
+import {
+  InteractiveElementInfo,
+  ActionResult,
+  PlaywrightErrorType,
+} from "../types/index.js";
 
 export class PlaywrightController {
   private browser: Browser | null = null;

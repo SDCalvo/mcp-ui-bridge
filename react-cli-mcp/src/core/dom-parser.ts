@@ -6,11 +6,15 @@ import {
   PageRegionInfo,
   StatusMessageAreaInfo,
   LoadingIndicatorInfo,
+  ActionResult,
+  ParserResult,
+  PlaywrightErrorType,
+  DomParserErrorType,
 } from "../types/index.js"; // Adjusted path
 import { DataAttributes } from "../types/attributes.js"; // Import the new constants object
 
 // Import centralized types
-import { ParserResult, DomParserErrorType } from "./types.js";
+// import { ParserResult, DomParserErrorType } from "./types.js"; // REMOVED THIS LINE
 
 export class DomParser {
   constructor(private page: Page | null) {}

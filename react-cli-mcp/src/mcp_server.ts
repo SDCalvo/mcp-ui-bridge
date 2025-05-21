@@ -4,12 +4,12 @@ import { PlaywrightController } from "./core/playwright-controller.js";
 import { DomParser } from "./core/dom-parser.js";
 // Page import is not directly used at the top level after refactor, PlaywrightController handles it.
 // import { Page } from "playwright";
-import { InteractiveElementInfo } from "./types/index.js";
 import {
+  InteractiveElementInfo,
   ActionResult,
   ParserResult,
   PlaywrightErrorType,
-} from "./core/types.js";
+} from "./types/index.js";
 import { pathToFileURL } from "url";
 import { resolve } from "path";
 
@@ -323,20 +323,26 @@ function addCoreTools(mcpServer: FastMCP) {
 
             // Select for select elements
             if (el.elementType === "select" && el.options) {
-              el.options.forEach((option) => {
-                generatedActions.push({
-                  id: el.id,
-                  label: el.label, // Label of the select element
-                  elementType: el.elementType,
-                  purpose: el.purpose,
-                  commandHint: `select #${el.id} "${option.value}" (Selects '${option.text}')`,
-                  currentValue: el.currentValue, // Current value of the select
-                  optionValue: option.value, // Specific option value for this action
-                  optionText: option.text, // Specific option text for this action
-                  isDisabled: el.isDisabled,
-                  isReadOnly: el.isReadOnly,
-                });
-              });
+              el.options.forEach(
+                (option: {
+                  value: string;
+                  text: string;
+                  selected?: boolean;
+                }) => {
+                  generatedActions.push({
+                    id: el.id,
+                    label: el.label, // Label of the select element
+                    elementType: el.elementType,
+                    purpose: el.purpose,
+                    commandHint: `select #${el.id} "${option.value}" (Selects '${option.text}')`,
+                    currentValue: el.currentValue, // Current value of the select
+                    optionValue: option.value, // Specific option value for this action
+                    optionText: option.text, // Specific option text for this action
+                    isDisabled: el.isDisabled,
+                    isReadOnly: el.isReadOnly,
+                  });
+                }
+              );
             }
 
             // Hover action for all interactive elements (if not disabled)
