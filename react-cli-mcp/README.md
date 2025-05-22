@@ -6,7 +6,7 @@ It enables the concept of **LLM-Oriented Accessibility**: a paradigm for web int
 
 The core philosophy is **"Code Once, Serve All."** Developers build their rich visual UI for humans, and by adding semantic attributes, the _same_ application becomes fully understandable and operable by LLMs.
 
-This `README.md` is for the `mcp-ui-bridge` library itself, found within the `/react-cli-mcp` directory of the main [mcp-ui-bridge project repository](https://github.com/SantiSite/mcp-ui-bridge). For an overview of the entire project structure and how to run the example `mcp-external-server`, please see the [main project README](https://github.com/SantiSite/mcp-ui-bridge/blob/main/README.md).
+This `README.md` is for the `mcp-ui-bridge` library itself, found within the `/react-cli-mcp` directory of the main [mcp-ui-bridge project repository](https://github.com/SDCalvo/mcp-ui-bridge). For an overview of the entire project structure and how to run the example `mcp-external-server`, please see the [main project README](https://github.com/SDCalvo/mcp-ui-bridge/blob/main/README.md).
 
 ## Features
 
@@ -154,7 +154,7 @@ This instrumentation is the cornerstone of aligning your frontend with the `mcp-
 
 If you want to contribute to the `mcp-ui-bridge` library itself (the code in this `react-cli-mcp` directory):
 
-1.  **Clone the main repository:** [https://github.com/SantiSite/mcp-ui-bridge.git](https://github.com/SantiSite/mcp-ui-bridge.git)
+1.  **Clone the main repository:** [https://github.com/SDCalvo/mcp-ui-bridge.git](https://github.com/SDCalvo/mcp-ui-bridge.git)
 2.  **Navigate to this directory:** `cd react-cli-mcp`
 3.  **Install dependencies:** `npm install`
 4.  **Build:** `npm run build` (compiles TypeScript to `dist`)

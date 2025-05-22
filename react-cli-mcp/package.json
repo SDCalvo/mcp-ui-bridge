@@ -33,7 +33,7 @@
   "description": "A library to enable LLM interaction with web applications via the Model Context Protocol (MCP) and LLM-Oriented Accessibility principles, using Playwright for browser automation.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SantiSite/mcp-ui-bridge.git"
+    "url": "git+https://github.com/SDCalvo/mcp-ui-bridge.git"
   },
   "devDependencies": {
     "@types/express": "^4.17.22",
