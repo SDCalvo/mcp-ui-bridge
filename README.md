@@ -38,6 +38,133 @@ This repository contains the `mcp-ui-bridge` tool and a sample application to de
     - `get_current_screen_actions`: Provides the LLM with a list of suggested actions and command hints.
     - `send_command`: Enables the LLM to execute actions like `click #id` or `type #id "text"`.
 
+## Instrumenting Your Frontend
+
+To make your web application understandable and operable by `mcp-ui-bridge`, you need to add `data-mcp-*` attributes to your HTML elements. These attributes provide the semantic information that the bridge uses to interact with your UI.
+
+Here are some common examples:
+
+**Key Attributes:**
+
+- `data-mcp-interactive-element="unique-id"`: Marks an element as interactive. The ID should be unique within the currently rendered view.
+- `data-mcp-element-type="<type>"`: Specifies the type of interactive element (e.g., `button`, `text_input`, `select`, `checkbox`, `radio`).
+- `data-mcp-element-label="<label>"`: A human-readable label for the element, often derived from visible text or an `aria-label`. This helps the LLM understand the element's purpose.
+- `data-mcp-purpose="<description>"`: A more detailed description of what the element does or is for.
+- `data-mcp-value-source-prop="<prop>"`: For inputs, specifies which JavaScript property holds the element's current value (e.g., `"value"`, `"checked"`).
+- `data-mcp-checked-prop="<prop>"`: For checkboxes or radio buttons, specifies the property indicating its checked state (usually `"checked"`).
+- `data-mcp-radio-group-name="<name>"`: For radio buttons, specifies the `name` attribute of the radio group they belong to. This is crucial for identifying and interacting with the correct group.
+- `data-mcp-region="<region-id>"`: Defines a logical section or container on the page.
+- `data-mcp-display-item-text`: Marks an element whose `innerText` should be captured as display data.
+- `data-mcp-display-item-id="<unique-id>"`: A unique ID for a display item, allowing the LLM to reference specific pieces of text.
+- `data-mcp-navigates-to="<url_or_identifier>"`: Indicates that interacting with this element will cause a navigation.
+- `data-mcp-triggers-loading="true"`: Indicates that interacting with this element may trigger a loading state.
+
+**Example Snippets (React/JSX):**
+
+- **Simple Button:**
+
+  ```html
+  <button
+    data-mcp-interactive-element="submit-button"
+    data-mcp-element-type="button"
+    data-mcp-element-label="Submit Form"
+    data-mcp-purpose="Submits the current form data."
+    onClick="{handleSubmit}"
+  >
+    Submit
+  </button>
+  ```
+
+- **Text Input:**
+
+  ```html
+  <input type="text" id="username-input"
+  data-mcp-interactive-element="username-field"
+  data-mcp-element-type="text_input" data-mcp-element-label="Username"
+  data-mcp-purpose="Enter your username." data-mcp-value-source-prop="value" //
+  Assumes 'value' prop holds the input's content value={username} onChange={(e)
+  => setUsername(e.target.value)} />
+  ```
+
+- **Checkbox:**
+
+  ```html
+  <input type="checkbox" id="terms-checkbox"
+  data-mcp-interactive-element="terms-checkbox" data-mcp-element-type="checkbox"
+  data-mcp-element-label="Agree to Terms" data-mcp-purpose="Confirm agreement to
+  terms and conditions." data-mcp-checked-prop="checked" // Assumes 'checked'
+  prop holds the state checked={agreedToTerms} onChange={(e) =>
+  setAgreedToTerms(e.target.checked)} />
+  <label htmlFor="terms-checkbox">I agree to the terms and conditions</label>
+  ```
+
+- **Select Dropdown:**
+
+  ```html
+  <select
+    id="country-select"
+    data-mcp-interactive-element="country-selector"
+    data-mcp-element-type="select"
+    data-mcp-element-label="Country Selector"
+    data-mcp-purpose="Select your country of residence."
+    data-mcp-value-source-prop="value"
+    value={selectedCountry}
+    onChange={(e) => setSelectedCountry(e.target.value)}
+  >
+    <option value="us" data-mcp-element-label="United States Option">United States</option>
+    <option value="ca" data-mcp-element-label="Canada Option">Canada</option>
+    <option value="gb" data-mcp-element-label="United Kingdom Option">United Kingdom</option>
+  </select>
+  ```
+
+- **Radio Button Group:**
+
+  ```html
+  <div role="radiogroup" aria-labelledby="payment-method-label">
+    <span
+      id="payment-method-label"
+      data-mcp-element-label="Payment Method Options"
+      >Choose Payment Method:</span
+    >
+    <div className="form-check">
+      // Example class, not MCP related <input type="radio" id="cc-radio"
+      name="paymentMethod" // HTML name attribute for grouping
+      value="credit_card" data-mcp-interactive-element="payment-type-cc"
+      data-mcp-element-type="radio" data-mcp-element-label="Credit Card Radio
+      Button" data-mcp-radio-group-name="paymentMethod" // MCP attribute for
+      identifying the group data-mcp-checked-prop="checked" checked={paymentType
+      === 'credit_card'} onChange={(e) => setPaymentType(e.target.value)} />
+      <label htmlFor="cc-radio">Credit Card</label>
+    </div>
+    <div className="form-check">
+      <input type="radio" id="paypal-radio" name="paymentMethod" value="paypal"
+      data-mcp-interactive-element="payment-type-paypal"
+      data-mcp-element-type="radio" data-mcp-element-label="PayPal Radio Button"
+      data-mcp-radio-group-name="paymentMethod" data-mcp-checked-prop="checked"
+      checked={paymentType === 'paypal'} onChange={(e) =>
+      setPaymentType(e.target.value)} />
+      <label htmlFor="paypal-radio">PayPal</label>
+    </div>
+  </div>
+  ```
+
+- **Display Container/Region:**
+  ```html
+  <div
+    data-mcp-region="user-profile-card"
+    data-mcp-purpose="Displays user profile information."
+  >
+    <h2 data-mcp-display-item-text data-mcp-display-item-id="user-name-display">
+      {user.name}
+    </h2>
+    <p data-mcp-display-item-text data-mcp-display-item-id="user-email-display">
+      {user.email}
+    </p>
+  </div>
+  ```
+
+By thoughtfully applying these attributes, you empower `mcp-ui-bridge` to understand and interact with your application as effectively as a human user, enabling a new level of LLM-driven automation and assistance.
+
 ## Getting Started: Running the Project
 
 ### Prerequisites

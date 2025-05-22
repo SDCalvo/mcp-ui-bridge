@@ -122,31 +122,167 @@ The `runMcpServer` function takes an `McpServerOptions` object. Key options incl
     - `get_current_screen_actions`: Provides the LLM with a list of suggested actions and command hints based on the currently visible and enabled interactive elements.
     - `send_command`: Enables the LLM to execute the desired interaction on the page.
 
-## Instrumenting Your Frontend: The `data-mcp-*` Attributes
+## Instrumenting Your Frontend with `data-mcp-*` Attributes
 
-The core philosophy of `mcp-ui-bridge` is **LLM-Oriented Accessibility**. This is achieved by instrumenting your web application's HTML with specific `data-mcp-*` attributes. These attributes provide semantic meaning, allowing the `DomParser` within the `mcp-ui-bridge` library to understand the structure, interactive elements, and purpose of your UI, and then convey this understanding to an LLM.
+To make your web application understandable and operable by `mcp-ui-bridge`, you need to add `data-mcp-*` attributes to your HTML elements. These attributes provide the semantic information that the bridge uses to interpret your UI and suggest/execute actions.
 
-Here are the key `data-mcp-*` attributes:
+**Key Attributes:**
 
-| Attribute                      | Purpose                                                                                                | Value(s) / Notes                                                                                                        | Example Usage                                                                     |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `data-mcp-interactive-element` | **Required for most interactive elements.** Marks an element that the LLM can interact with.           | Can be empty. If the element is not an `input`, `button`, `select`, `a`, or `textarea`, this value is used as its `id`. | `<div data-mcp-interactive-element="custom-button">Click Me</div>`                |
-| `data-mcp-element-label`       | Provides a human-readable label for the element. Crucial for LLM understanding.                        | String (e.g., "Submit Form", "User Name Input")                                                                         | `<input data-mcp-element-label="User Name Input">`                                |
-| `data-mcp-element-type`        | Explicitly defines the type of a custom interactive element (if not a standard HTML tag).              | String (e.g., "custom-slider", "date-picker")                                                                           | `<div data-mcp-interactive-element data-mcp-element-type="star-rating">...</div>` |
-| `data-mcp-current-value`       | For custom elements, explicitly provides their current value if not readable from standard properties. | String                                                                                                                  | `<div data-mcp-current-value="75%">...</div>`                                     |
-| `data-mcp-purpose`             | Describes the high-level goal or function of the element or a region.                                  | String (e.g., "submit-user-profile", "display-search-results")                                                          | `<button data-mcp-purpose="submit-user-profile">Save</button>`                    |
-| `data-mcp-container-id`        | Groups related items, often used for lists or collections of data. Parsed into `structuredData`.       | String (unique ID for the container)                                                                                    | `<ul data-mcp-container-id="todo-list">...</ul>`                                  |
-| `data-mcp-item-text`           | Identifies the text content of an item within a `data-mcp-container-id`. Parsed into `structuredData`. | String (extracted from the element's text content if not specified)                                                     | `<li data-mcp-item-text>Buy milk</li>`                                            |
-| `data-mcp-region-id`           | Defines a semantic region on the page. Parsed into `structuredData`.                                   | String (unique ID for the region)                                                                                       | `<section data-mcp-region-id="user-settings">...</section>`                       |
-| `data-mcp-navigates-to`        | For `<a>` tags or custom navigation elements, indicates the destination URL or view.                   | String (URL or logical view name)                                                                                       | `<a data-mcp-navigates-to="/profile">Profile</a>`                                 |
-| `data-mcp-updates-container`   | Indicates which `data-mcp-container-id` or `data-mcp-region-id` this element might modify or refresh.  | String (ID of the container/region)                                                                                     | `<button data-mcp-updates-container="todo-list">Add</button>`                     |
-| `data-mcp-controls-element`    | Links an interactive element (like a button) to the element it primarily controls (like an input).     | String (ID of the controlled element)                                                                                   | `<button data-mcp-controls-element="username-input">...</button>`                 |
-| `data-mcp-is-disabled`         | Explicitly marks an element as disabled if the standard `disabled` attribute isn't sufficient/used.    | "true" or "false"                                                                                                       | `<div data-mcp-is-disabled="true">Cannot click</div>`                             |
-| `data-mcp-is-readonly`         | Explicitly marks an element as read-only.                                                              | "true" or "false"                                                                                                       | `<div data-mcp-is-readonly="true">View Only</div>`                                |
-| `data-mcp-is-checked`          | For custom checkbox-like elements, explicitly provides their checked state.                            | "true" or "false"                                                                                                       | `<div data-mcp-is-checked="true">Subscribed</div>`                                |
-| `data-mcp-custom-state`        | For elements with complex states beyond simple values, allows exposing a descriptive state string.     | String (e.g., "expanded", "loading", "error")                                                                           | `<div data-mcp-custom-state="expanded">Details</div>`                             |
+- `data-mcp-interactive-element="unique-id"`: Marks an element as interactive. The ID should be unique within the currently rendered view and is used by the LLM to target actions (e.g., `click #unique-id`).
+- `data-mcp-element-type="<type>"`: Specifies the type of interactive element. Supported types include:
+  - `button`
+  - `text_input`
+  - `select`
+  - `checkbox`
+  - `radio`
+  - `link` (though often handled implicitly by its nature)
+  - `form` (can be used to group related inputs)
+- `data-mcp-element-label="<label>"`: A concise, human-readable label for the element. This is crucial for the LLM to understand what the element represents (e.g., "Username", "Submit Application", "Next Page"). It's often derived from visible text near the element, an `aria-label`, or a placeholder.
+- `data-mcp-purpose="<description>"`: A more detailed description of what the element does or what it's for. This provides additional context to the LLM. (e.g., "Enters the user's chosen username.", "Finalizes the order and proceeds to payment.").
+- `data-mcp-value-source-prop="<prop>"`: For input elements (`text_input`, `select`), this specifies the JavaScript property on the DOM element that holds its current value. Typically `value`. The bridge will attempt to read this property to report the current state.
+- `data-mcp-checked-prop="<prop>"`: For `checkbox` and `radio` elements, this specifies the JavaScript property indicating its checked state. Typically `checked`.
+- `data-mcp-radio-group-name="<name>"`: **Crucial for radio buttons.** This attribute must match the HTML `name` attribute of the radio button group. It allows the bridge to correctly identify and interact with radio buttons as part of a group (e.g., `choose #radio_id "value"` where `#radio_id` is one of the radio buttons in the group).
+- `data-mcp-options-source="<strategy>"`: For `select` elements, indicates how options should be discovered. Currently, the primary strategy involves looking for child `<option>` tags. Values from these options are extracted. Option labels can be specified with `data-mcp-element-label` on the `<option>` tags themselves.
+- `data-mcp-region="<region-id>"`: Defines a logical section, container, or group of elements on the page (e.g., "user-profile-card", "search-filters"). This helps in structuring the information presented to the LLM. The `purpose` attribute can also be applied to regions.
+- `data-mcp-display-item-text`: Marks an element whose `innerText` or `textContent` should be captured as a piece of displayable information for the LLM.
+- `data-mcp-display-item-id="<unique-id>"`: A unique ID for a specific piece of text marked with `data-mcp-display-item-text`. This allows the LLM to reference or query specific text content.
+- `data-mcp-navigates-to="<url_or_identifier>"`: (Optional) Indicates that interacting with this element (e.g., a link or button) will cause a navigation. The value can be a URL or a conceptual identifier for the destination page/view.
+- `data-mcp-triggers-loading="true"`: (Optional) Indicates that interacting with this element may trigger an asynchronous operation or loading state in the UI. This can help the LLM anticipate delays.
 
-By thoughtfully applying these attributes, you create a rich, semantic layer over your existing UI. The `DomParser` uses this layer to generate the `currentUrl`, `structuredData` (from containers and regions), and `interactiveElements` (with their labels, types, values, and purposes) that are sent to the LLM. This enables the LLM to "understand" the page contextually and perform actions accurately.
+**Example Snippets (React/JSX):**
+
+Below are examples showing how to apply these attributes to common HTML elements.
+
+- **Simple Button:**
+
+  ```html
+  <button
+    data-mcp-interactive-element="submit-button"
+    data-mcp-element-type="button"
+    data-mcp-element-label="Submit Form"
+    data-mcp-purpose="Submits the current form data."
+    onClick="{handleSubmit}"
+  >
+    Submit
+  </button>
+  ```
+
+- **Text Input:**
+
+  ```html
+  <input
+    type="text"
+    id="username-input"
+    data-mcp-interactive-element="username-field"
+    data-mcp-element-type="text_input"
+    data-mcp-element-label="Username"
+    data-mcp-purpose="Enter your username."
+    data-mcp-value-source-prop="value"
+  />
+  ```
+
+- **Checkbox:**
+
+  ```html
+  <input
+    type="checkbox"
+    id="terms-checkbox"
+    data-mcp-interactive-element="terms-checkbox"
+    data-mcp-element-type="checkbox"
+    data-mcp-element-label="Agree to Terms"
+    data-mcp-purpose="Confirm agreement to terms and conditions."
+    data-mcp-checked-prop="checked"
+  />
+  <label htmlFor="terms-checkbox">I agree to the terms and conditions</label>
+  ```
+
+- **Select Dropdown:**
+
+  ```html
+  <select
+    id="country-select"
+    data-mcp-interactive-element="country-selector"
+    data-mcp-element-type="select"
+    data-mcp-element-label="Country Selector"
+    data-mcp-purpose="Select your country of residence."
+    data-mcp-value-source-prop="value"
+  >
+    <option value="us" data-mcp-element-label="United States Option">
+      United States
+    </option>
+    <option value="ca" data-mcp-element-label="Canada Option">Canada</option>
+    <option value="gb" data-mcp-element-label="United Kingdom Option">
+      United Kingdom
+    </option>
+  </select>
+  ```
+
+- **Radio Button Group:**
+
+  ```html
+  <div role="radiogroup" aria-labelledby="payment-method-label">
+    <span
+      id="payment-method-label"
+      data-mcp-element-label="Payment Method Options"
+    >
+      Choose Payment Method:
+    </span>
+    <div>
+      <input
+        type="radio"
+        id="cc-radio"
+        name="paymentMethod"
+        value="credit_card"
+        data-mcp-interactive-element="payment-type-cc"
+        data-mcp-element-type="radio"
+        data-mcp-element-label="Credit Card Radio Button"
+        data-mcp-radio-group-name="paymentMethod"
+        data-mcp-checked-prop="checked"
+      />
+      <label htmlFor="cc-radio">Credit Card</label>
+    </div>
+    <div>
+      <input
+        type="radio"
+        id="paypal-radio"
+        name="paymentMethod"
+        value="paypal"
+        data-mcp-interactive-element="payment-type-paypal"
+        data-mcp-element-type="radio"
+        data-mcp-element-label="PayPal Radio Button"
+        data-mcp-radio-group-name="paymentMethod"
+        data-mcp-checked-prop="checked"
+      />
+      <label htmlFor="paypal-radio">PayPal</label>
+    </div>
+  </div>
+  ```
+
+- **Display Container/Region with Text Items:**
+  ```html
+  <div
+    data-mcp-region="user-profile-card"
+    data-mcp-purpose="Displays user profile information such as name and email."
+  >
+    <h2 data-mcp-display-item-text data-mcp-display-item-id="user-name-display">
+      User Name Example
+    </h2>
+    <p data-mcp-display-item-text data-mcp-display-item-id="user-email-display">
+      user@example.com
+    </p>
+    <button
+      data-mcp-interactive-element="edit-profile-button"
+      data-mcp-element-type="button"
+      data-mcp-element-label="Edit Profile"
+      data-mcp-purpose="Navigates to the profile editing page."
+      data-mcp-navigates-to="/profile/edit"
+    >
+      Edit Profile
+    </button>
+  </div>
+  ```
+
+By thoughtfully applying these attributes, you provide a rich, semantic understanding of your application to the LLM, enabling robust and reliable automated interaction.
 
 This instrumentation is the cornerstone of aligning your frontend with the `mcp-ui-bridge` design philosophy: build for humans, annotate for LLMs, and serve both effectively from a single codebase.
 
@@ -164,3 +300,185 @@ If you want to contribute to the `mcp-ui-bridge` library itself (the code in thi
 ## License
 
 This library is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+# `mcp-ui-bridge` Library README
+
+This document provides information specifically about using the `mcp-ui-bridge` library (found in this directory, historically named `react-cli-mcp`) to connect your web application to a Model Context Protocol (MCP) server, enabling interaction with Large Language Models (LLMs).
+
+For general project overview, setup, and running the demo, please see the [main project README.md](../../README.md).
+
+## Core Concept
+
+`mcp-ui-bridge` allows an LLM to "see" and "interact" with a web application by:
+
+1.  **Parsing `data-mcp-*` attributes:** You instrument your frontend's HTML with these attributes to provide semantic meaning to UI elements.
+2.  **Using Playwright:** It connects to your live web application, inspects the DOM for these attributes, and executes actions (clicks, types, etc.).
+3.  **Exposing MCP Tools:** It runs an MCP server with tools like `get_current_screen_data`, `get_current_screen_actions`, and `send_command`.
+
+## Instrumenting Your Frontend with `data-mcp-*` Attributes
+
+To make your web application understandable and operable by `mcp-ui-bridge`, you need to add `data-mcp-*` attributes to your HTML elements. These attributes provide the semantic information that the bridge uses to interpret your UI and suggest/execute actions.
+
+**Key Attributes:**
+
+- `data-mcp-interactive-element="unique-id"`: Marks an element as interactive. The ID should be unique within the currently rendered view and is used by the LLM to target actions (e.g., `click #unique-id`).
+- `data-mcp-element-type="<type>"`: Specifies the type of interactive element. Supported types include:
+  - `button`
+  - `text_input`
+  - `select`
+  - `checkbox`
+  - `radio`
+  - `link` (though often handled implicitly by its nature)
+  - `form` (can be used to group related inputs)
+- `data-mcp-element-label="<label>"`: A concise, human-readable label for the element. This is crucial for the LLM to understand what the element represents (e.g., "Username", "Submit Application", "Next Page"). It's often derived from visible text near the element, an `aria-label`, or a placeholder.
+- `data-mcp-purpose="<description>"`: A more detailed description of what the element does or what it's for. This provides additional context to the LLM. (e.g., "Enters the user's chosen username.", "Finalizes the order and proceeds to payment.").
+- `data-mcp-value-source-prop="<prop>"`: For input elements (`text_input`, `select`), this specifies the JavaScript property on the DOM element that holds its current value. Typically `value`. The bridge will attempt to read this property to report the current state.
+- `data-mcp-checked-prop="<prop>"`: For `checkbox` and `radio` elements, this specifies the JavaScript property indicating its checked state. Typically `checked`.
+- `data-mcp-radio-group-name="<name>"`: **Crucial for radio buttons.** This attribute must match the HTML `name` attribute of the radio button group. It allows the bridge to correctly identify and interact with radio buttons as part of a group (e.g., `choose #radio_id "value"` where `#radio_id` is one of the radio buttons in the group).
+- `data-mcp-options-source="<strategy>"`: For `select` elements, indicates how options should be discovered. Currently, the primary strategy involves looking for child `<option>` tags. Values from these options are extracted. Option labels can be specified with `data-mcp-element-label` on the `<option>` tags themselves.
+- `data-mcp-region="<region-id>"`: Defines a logical section, container, or group of elements on the page (e.g., "user-profile-card", "search-filters"). This helps in structuring the information presented to the LLM. The `purpose` attribute can also be applied to regions.
+- `data-mcp-display-item-text`: Marks an element whose `innerText` or `textContent` should be captured as a piece of displayable information for the LLM.
+- `data-mcp-display-item-id="<unique-id>"`: A unique ID for a specific piece of text marked with `data-mcp-display-item-text`. This allows the LLM to reference or query specific text content.
+- `data-mcp-navigates-to="<url_or_identifier>"`: (Optional) Indicates that interacting with this element (e.g., a link or button) will cause a navigation. The value can be a URL or a conceptual identifier for the destination page/view.
+- `data-mcp-triggers-loading="true"`: (Optional) Indicates that interacting with this element may trigger an asynchronous operation or loading state in the UI. This can help the LLM anticipate delays.
+
+**Example Snippets (React/JSX):**
+
+Below are examples showing how to apply these attributes to common HTML elements.
+
+- **Simple Button:**
+
+  ```html
+  <button
+    data-mcp-interactive-element="submit-button"
+    data-mcp-element-type="button"
+    data-mcp-element-label="Submit Form"
+    data-mcp-purpose="Submits the current form data."
+    onClick="{handleSubmit}"
+  >
+    Submit
+  </button>
+  ```
+
+- **Text Input:**
+
+  ```html
+  <input
+    type="text"
+    id="username-input"
+    data-mcp-interactive-element="username-field"
+    data-mcp-element-type="text_input"
+    data-mcp-element-label="Username"
+    data-mcp-purpose="Enter your username."
+    data-mcp-value-source-prop="value"
+  />
+  ```
+
+- **Checkbox:**
+
+  ```html
+  <input
+    type="checkbox"
+    id="terms-checkbox"
+    data-mcp-interactive-element="terms-checkbox"
+    data-mcp-element-type="checkbox"
+    data-mcp-element-label="Agree to Terms"
+    data-mcp-purpose="Confirm agreement to terms and conditions."
+    data-mcp-checked-prop="checked"
+  />
+  <label htmlFor="terms-checkbox">I agree to the terms and conditions</label>
+  ```
+
+- **Select Dropdown:**
+
+  ```html
+  <select
+    id="country-select"
+    data-mcp-interactive-element="country-selector"
+    data-mcp-element-type="select"
+    data-mcp-element-label="Country Selector"
+    data-mcp-purpose="Select your country of residence."
+    data-mcp-value-source-prop="value"
+  >
+    <option value="us" data-mcp-element-label="United States Option">
+      United States
+    </option>
+    <option value="ca" data-mcp-element-label="Canada Option">Canada</option>
+    <option value="gb" data-mcp-element-label="United Kingdom Option">
+      United Kingdom
+    </option>
+  </select>
+  ```
+
+- **Radio Button Group:**
+
+  ```html
+  <div role="radiogroup" aria-labelledby="payment-method-label">
+    <span
+      id="payment-method-label"
+      data-mcp-element-label="Payment Method Options"
+    >
+      Choose Payment Method:
+    </span>
+    <div>
+      <input
+        type="radio"
+        id="cc-radio"
+        name="paymentMethod"
+        value="credit_card"
+        data-mcp-interactive-element="payment-type-cc"
+        data-mcp-element-type="radio"
+        data-mcp-element-label="Credit Card Radio Button"
+        data-mcp-radio-group-name="paymentMethod"
+        data-mcp-checked-prop="checked"
+      />
+      <label htmlFor="cc-radio">Credit Card</label>
+    </div>
+    <div>
+      <input
+        type="radio"
+        id="paypal-radio"
+        name="paymentMethod"
+        value="paypal"
+        data-mcp-interactive-element="payment-type-paypal"
+        data-mcp-element-type="radio"
+        data-mcp-element-label="PayPal Radio Button"
+        data-mcp-radio-group-name="paymentMethod"
+        data-mcp-checked-prop="checked"
+      />
+      <label htmlFor="paypal-radio">PayPal</label>
+    </div>
+  </div>
+  ```
+
+- **Display Container/Region with Text Items:**
+  ```html
+  <div
+    data-mcp-region="user-profile-card"
+    data-mcp-purpose="Displays user profile information such as name and email."
+  >
+    <h2 data-mcp-display-item-text data-mcp-display-item-id="user-name-display">
+      User Name Example
+    </h2>
+    <p data-mcp-display-item-text data-mcp-display-item-id="user-email-display">
+      user@example.com
+    </p>
+    <button
+      data-mcp-interactive-element="edit-profile-button"
+      data-mcp-element-type="button"
+      data-mcp-element-label="Edit Profile"
+      data-mcp-purpose="Navigates to the profile editing page."
+      data-mcp-navigates-to="/profile/edit"
+    >
+      Edit Profile
+    </button>
+  </div>
+  ```
+
+By thoughtfully applying these attributes, you provide a rich, semantic understanding of your application to the LLM, enabling robust and reliable automated interaction.
+
+This instrumentation is the cornerstone of aligning your frontend with the `mcp-ui-bridge` design philosophy: build for humans, annotate for LLMs, and serve both effectively from a single codebase.
+
+## Using the Library
+
+Details on how to integrate and use `runMcpServer` from this library in your own Node.js project can be found in the "Using `mcp-ui-bridge` as a Library" section of the [main project README.md](../../README.md).
