@@ -213,6 +213,7 @@ The `DomParser` currently:
     - [x] Updated `react-cli-mcp/README.md` (for npm) with comprehensive library usage details.
 
 - **Phase 3.5.1 (was 3.6): MCP Server Client Authentication** (Moved and renumbered for clarity)
+
   - **Chosen Approach**: Custom user-defined asynchronous authentication callback.
     - [x] Added `authenticateClient?: (context: ClientAuthContext) => Promise<boolean>` to `McpServerOptions`.
     - [x] `ClientAuthContext` provides `headers` and `sourceIp`.
@@ -220,6 +221,60 @@ The `DomParser` currently:
     - [x] If callback returns `false` or throws, FastMCP denies connection (401/500).
     - [x] `mcp-external-server` includes a toy implementation (`MANUALLY_ALLOW_CONNECTION`) for testing this.
     - [x] Successfully tested auth success and failure scenarios.
+
+- **Phase 3.6: Extensibility for Custom `data-mcp-*` Attributes and Handlers**
+
+  - **Goal**: Allow users of `mcp-ui-bridge` (especially when used as a library) to define their own custom `data-mcp-*` attributes for data extraction and, in later stages, custom action handlers and parsing logic.
+  - **Approach**: A phased approach, starting with custom data extraction, then moving to custom action handling, and finally to more advanced parser customizations.
+
+  - **Sub-Phase 3.6.1: Custom Data Extraction**
+
+    - **Task 3.6.1.1**: Define `CustomAttributeReader` and Update `McpServerOptions`
+      - [x] In `src/types/index.ts`:
+        - [x] Define `CustomAttributeReader` interface:
+          ```typescript
+          export interface CustomAttributeReader {
+            attributeName: string; // e.g., "data-mcp-priority"
+            outputKey: string; // Key for InteractiveElementInfo.customData
+            processValue?: (
+              attributeValue: string | null,
+              elementHandle?: import("playwright").ElementHandle
+            ) => any;
+          }
+          ```
+        - [x] Add `customData?: Record<string, any>;` to `InteractiveElementInfo`.
+        - [x] Add `customAttributeReaders?: CustomAttributeReader[];` to `McpServerOptions`.
+    - **Task 3.6.1.2**: Enhance `DomParser` (`src/core/dom-parser.ts`)
+      - [x] Modify constructor to accept and store `customAttributeReaders`.
+      - [x] In `getInteractiveElementsWithState`, iterate through `customAttributeReaders`:
+        - [x] Read the specified attribute using `getElementAttribute`.
+        - [x] If found, populate `elementInfo.customData[reader.outputKey]` using `reader.processValue` if provided, or the raw value.
+        - [x] Handle potential errors from `processValue` gracefully (log warning, store error marker).
+      - [x] Update logging to include extracted custom data.
+    - **Task 3.6.1.3**: Enhance `PlaywrightController` (`src/core/playwright-controller.ts`)
+      - [x] Modify constructor to accept and store `customAttributeReaders`.
+      - [x] In `getElementState`, similarly iterate `customAttributeReaders` and populate `customData` in the returned state object. This ensures consistency if `getElementState` is used to get a full element snapshot including custom fields.
+    - **Task 3.6.1.4**: Update `mcp_server.ts`
+      - [x] Pass `options.customAttributeReaders` from `McpServerOptions` to `DomParser` and `PlaywrightController` constructors.
+    - **Task 3.6.1.5**: Documentation
+      - [ ] Document how to use `CustomAttributeReader` when using `mcp-ui-bridge` as a library.
+      - [ ] Note that initial CLI configuration for this feature (via env vars) is deferred.
+
+  - **Sub-Phase 3.6.2: Custom Action Handlers (Future)**
+
+    - [ ] Define `CustomActionDefinition` (e.g., `commandName`, `parameterSchema` (Zod), `description`, `execute` function taking `elementId` and parsed args).
+    - [ ] Define how custom actions are suggested (e.g., an `appliesTo(elementInfo: InteractiveElementInfo) => boolean` predicate in `CustomActionDefinition`).
+    - [ ] `mcp_server.ts`:
+      - [ ] Register custom actions as new tools in `FastMCP`.
+      - [ ] `get_current_screen_actions` to use `appliesTo` predicates to suggest custom commands.
+    - [ ] `PlaywrightController` might need a generic way to invoke these custom action `execute` functions or they are self-contained.
+
+  - **Sub-Phase 3.6.3: Advanced `DomParser` Customization (Future)**
+    - [ ] Define `CustomElementProcessor` interface to allow users to:
+      - [ ] Override/supplement element type inference.
+      - [ ] Override/supplement label inference.
+      - [ ] Provide custom logic for `currentValue`, `isChecked`, or other `InteractiveElementInfo` state fields.
+    - [ ] `DomParser` to consult these processors.
 
 ## 8. Key Challenges & Risks
 
@@ -256,53 +311,4 @@ The `DomParser` currently:
     - Set `main` to `dist/mcp_server.js` and `types` to `dist/mcp_server.d.ts`.
     - Added `files` array to include `dist`, `README.md`, and `LICENSE`.
     - Added `keywords`, `author`, and `description`.
-    - Updated `build` script to `npm run clean && tsc`.
-    - Ensured `clean` script correctly removes the `dist` directory.
-  - **README Creation (`Task 3.4.4`):** Created a dedicated `react-cli-mcp/README.md` file with:
-    - Project overview.
-    - Features.
-    - Installation instructions (as a library).
-    - Programmatic usage example (importing `runMcpServer` and `McpServerOptions`).
-    - Configuration options for `McpServerOptions`.
-    - Instructions on how to run the example (pointing to the test frontend scenario).
-  - **Local Testing as a Library:**
-    - Successfully built `react-cli-mcp` using `npm run build`.
-    - Used `npm link` in `react-cli-mcp` and then `npm link react-cli-mcp` in the `frontend` test project.
-    - **Alternative Linking:** Successfully switched to using `file:../react-cli-mcp` in `frontend/package.json`'s `devDependencies` and ran `npm install` for a more stable local dependency setup.
-    - Created `frontend/scripts/launch-mcp.ts` to programmatically import and run `react-cli-mcp` using `runMcpServer` with specific options.
-    - Added `start-mcp-agent` script to `frontend/package.json` (`npx tsx ./scripts/launch-mcp.ts`).
-    - Resolved TypeScript configuration issues in `frontend/tsconfig.node.json` (module resolution, includes) and type import issues (`verbatimModuleSyntax`) in `launch-mcp.ts`.
-    - **Successfully tested all MCP tools** (`get_current_screen_data`, `get_current_screen_actions`, `send_command`) using the `frontend` project's `start-mcp-agent` script, confirming the library works as intended when imported and used by another project. The MCP agent connected via Cursor used the server instance started by `launch-mcp.ts`.
-
-**Potential Next Steps:**
-
-1.  **Refine Error Handling & Robustness in MCP Tools:**
-    - Further improve error reporting from tools, ensuring consistent error structures and types.
-    - Handle more edge cases in `send_command` parsing or Playwright interactions.
-2.  **Expand `send_command` Capabilities:**
-    - Consider adding support for other actions (e.g., `select #id "value"`, `scroll #id`, `hover #id`, `state #id` as a command if distinct from `getElementState` which is internal).
-    - Improve parsing for more complex parameters if needed.
-3.  **MCP Test Client (`Task 3.3.3` - was previously under Phase 3.3):**
-    - Develop a simple, dedicated MCP client script for more streamlined testing of the server, beyond the interactive tool usage here. This would help in automating test sequences.
-4.  **Formalize MCP Message Schemas (`Task 3.3.1` - was previously under Phase 3.3):**
-    - While FastMCP handles schema generation for tool parameters, consider documenting or even generating/exposing JSON schemas for the _return values_ of `get_current_screen_data` and `get_current_screen_actions` for client-side validation and type generation.
-5.  **Begin Unit and Integration Testing (`Phase 3.4`):**
-    - Start writing unit tests for the `DomParser` logic (especially attribute/label/type inference).
-    - Write unit tests for `PlaywrightController` methods (these might be more like integration tests depending on how they are mocked).
-    - Write integration tests for the MCP server tools, possibly using the test client mentioned above.
-6.  **Address `main.ts` (Original CLI):**
-    - The `PLAN.md` mentions `main.ts` as the previous CLI entry point. Decide on its future:
-      - Will it be deprecated in favor of only the MCP server and library usage?
-      - Will it be updated to _use_ the MCP server as a client for local CLI interaction/debugging (using the library itself)?
-      - Or, will the `mcp_server.ts` (when run directly via Node, if that's desired) become the sole entry point for the tool if a direct CLI executable is still needed, perhaps with a command-line flag to enable an interactive diagnostic mode? _(Currently `src/main.ts` is the entry for `npm run start` and correctly uses `runMcpServer` from `mcp_server.ts`)_. Consider if `src/main.ts` is still the best name/place if the project is primarily a library.
-7.  **TSDoc and API Documentation (`Task 3.4.4` refinement):**
-    - Enhance TSDoc comments for all exported functions and types in `react-cli-mcp` for better auto-generated documentation (e.g., using TypeDoc).
-8.  **Configuration Improvements for Library Usage:**
-    - Ensure `McpServerOptions` is comprehensive for library users.
-    - Review default behaviors and error handling when used as a library.
-9.  **CLI Entry Point (`Task 3.4.2` - `bin` field):**
-    - Revisit if a global CLI command (e.g., `npx react-cli-mcp start --url ...`) is still desired in addition to the programmatic library usage. If so, implement the `bin` in `package.json` and a CLI argument parsing mechanism in `src/main.ts` or a dedicated CLI entry point script.
-10. **Publish to npm (`Task 3.4.5`):**
-    - Once further testing and documentation are complete, consider publishing to npm.
-
----
+    - Updated `build`

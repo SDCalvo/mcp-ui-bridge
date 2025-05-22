@@ -9,12 +9,18 @@ import {
   McpServerOptions,
   ClientAuthContext,
   AuthenticateClientCallback,
+  CustomAttributeReader,
 } from "./types/index.js";
 import { pathToFileURL } from "url";
 import { resolve } from "path";
 
 // Explicitly re-export the types needed by consumers of the library
-export { McpServerOptions, ClientAuthContext, type AuthenticateClientCallback };
+export {
+  McpServerOptions,
+  ClientAuthContext,
+  type AuthenticateClientCallback,
+  type CustomAttributeReader,
+};
 
 console.log("[mcp_server.ts] Initializing FastMCP server logic...");
 
@@ -25,14 +31,18 @@ let domParser: DomParser | null = null;
 
 // --- Core Server Function ---
 async function initializeBrowserAndDependencies(
-  options: Pick<McpServerOptions, "headlessBrowser" | "targetUrl">
+  options: Pick<
+    McpServerOptions,
+    "headlessBrowser" | "targetUrl" | "customAttributeReaders"
+  >
 ): Promise<void> {
   console.log(
     `[mcp_server.ts] Initializing PlaywrightController (Headless: ${options.headlessBrowser})...`
   );
-  playwrightController = new PlaywrightController({
-    headless: options.headlessBrowser,
-  });
+  playwrightController = new PlaywrightController(
+    { headless: options.headlessBrowser },
+    options.customAttributeReaders || []
+  );
 
   const launchResult = await playwrightController.launch();
   if (!launchResult.success || !playwrightController.getPage()) {
@@ -74,7 +84,7 @@ async function initializeBrowserAndDependencies(
     `[mcp_server.ts] Successfully navigated to ${options.targetUrl}.`
   );
 
-  domParser = new DomParser(pageInstance);
+  domParser = new DomParser(pageInstance, options.customAttributeReaders || []);
   console.log("[mcp_server.ts] DomParser initialized.");
   console.log(
     "[mcp_server.ts] Browser and dependencies initialized successfully."
@@ -469,6 +479,7 @@ export async function runMcpServer(options: McpServerOptions): Promise<void> {
     headlessBrowser:
       options.headlessBrowser === undefined ? true : options.headlessBrowser, // Default to true (headless)
     targetUrl: options.targetUrl, // targetUrl is mandatory in McpServerOptions
+    customAttributeReaders: options.customAttributeReaders || [], // Pass through
   });
 
   const { authenticateClient } = options;

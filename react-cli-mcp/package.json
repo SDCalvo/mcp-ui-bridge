@@ -1,6 +1,6 @@
 {
   "name": "mcp-ui-bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "main": "dist/mcp_server.js",
   "types": "dist/mcp_server.d.ts",

@@ -4,6 +4,7 @@ import {
   InteractiveElementInfo,
   ActionResult,
   PlaywrightErrorType,
+  CustomAttributeReader,
 } from "../types/index.js";
 
 export class PlaywrightController {
@@ -13,7 +14,8 @@ export class PlaywrightController {
   private readonly DEFAULT_TIMEOUT = 5000; // ms
 
   constructor(
-    private launchOptions: { headless?: boolean } = { headless: true }
+    private launchOptions: { headless?: boolean } = { headless: true },
+    private customAttributeReaders: CustomAttributeReader[] = []
   ) {}
 
   async launch(): Promise<ActionResult> {
@@ -796,6 +798,36 @@ export class PlaywrightController {
         state.updatesContainer = updatesContainer;
       if (navigatesTo !== undefined) state.navigatesTo = navigatesTo;
       if (customState !== undefined) state.customState = customState;
+
+      // Process custom attributes
+      if (
+        this.customAttributeReaders &&
+        this.customAttributeReaders.length > 0
+      ) {
+        state.customData = {}; // Initialize customData
+        for (const reader of this.customAttributeReaders) {
+          const rawValue = await this.getAttribute(
+            elementLocator, // Use the locator here
+            reader.attributeName
+          );
+          try {
+            if (reader.processValue) {
+              const elementHandle = await elementLocator.elementHandle(); // Get ElementHandle for processValue
+              state.customData[reader.outputKey] = reader.processValue(
+                rawValue === undefined ? null : rawValue,
+                elementHandle || undefined // Pass ElementHandle or undefined
+              );
+            } else if (rawValue !== undefined) {
+              state.customData[reader.outputKey] = rawValue;
+            }
+          } catch (e: any) {
+            console.warn(
+              `Error processing custom attribute "${reader.attributeName}" for element "${elementId}" with key "${reader.outputKey}" in PlaywrightController: ${e.message}`
+            );
+            state.customData[reader.outputKey] = "ERROR_PROCESSING_ATTRIBUTE";
+          }
+        }
+      }
 
       const message = `Successfully retrieved state for element ${elementId}.`;
       return { success: true, message, data: state };

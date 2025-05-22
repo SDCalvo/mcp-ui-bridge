@@ -10,6 +10,7 @@ import {
   ParserResult,
   PlaywrightErrorType,
   DomParserErrorType,
+  CustomAttributeReader,
 } from "../types/index.js"; // Adjusted path
 import { DataAttributes } from "../types/attributes.js"; // Import the new constants object
 
@@ -17,7 +18,10 @@ import { DataAttributes } from "../types/attributes.js"; // Import the new const
 // import { ParserResult, DomParserErrorType } from "./types.js"; // REMOVED THIS LINE
 
 export class DomParser {
-  constructor(private page: Page | null) {}
+  constructor(
+    private page: Page | null,
+    private customAttributeReaders: CustomAttributeReader[] = []
+  ) {}
 
   private async getElementAttribute(
     element: ElementHandle,
@@ -291,6 +295,37 @@ export class DomParser {
         if (navigatesTo !== undefined) elementInfo.navigatesTo = navigatesTo;
         if (customState !== undefined) elementInfo.customState = customState;
 
+        // Process custom attributes
+        if (
+          this.customAttributeReaders &&
+          this.customAttributeReaders.length > 0
+        ) {
+          elementInfo.customData = {}; // Initialize customData
+          for (const reader of this.customAttributeReaders) {
+            const rawValue = await this.getElementAttribute(
+              elementHandle,
+              reader.attributeName
+            );
+            try {
+              if (reader.processValue) {
+                elementInfo.customData[reader.outputKey] = reader.processValue(
+                  rawValue === undefined ? null : rawValue, // Pass null if attribute not found
+                  elementHandle
+                );
+              } else if (rawValue !== undefined) {
+                // Only store if attribute exists and no processValue function
+                elementInfo.customData[reader.outputKey] = rawValue;
+              }
+            } catch (e: any) {
+              console.warn(
+                `Error processing custom attribute "${reader.attributeName}" for element "${elementId}" with key "${reader.outputKey}": ${e.message}`
+              );
+              elementInfo.customData[reader.outputKey] =
+                "ERROR_PROCESSING_ATTRIBUTE";
+            }
+          }
+        }
+
         let logMessage = `  - ID: ${elementId}, Type: ${elementType}, Label: "${label}"`;
         if (elementInfo.purpose)
           logMessage += `, Purpose: "${elementInfo.purpose}"`;
@@ -319,6 +354,14 @@ export class DomParser {
           logMessage += `, NavigatesTo: "${elementInfo.navigatesTo}"`;
         if (elementInfo.customState)
           logMessage += `, State: "${elementInfo.customState}"`;
+        if (
+          elementInfo.customData &&
+          Object.keys(elementInfo.customData).length > 0
+        ) {
+          logMessage += `, CustomData: ${JSON.stringify(
+            elementInfo.customData
+          )}`;
+        }
         console.log(logMessage);
 
         foundElements.push(elementInfo);

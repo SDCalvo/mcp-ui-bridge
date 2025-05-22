@@ -52,6 +52,8 @@ const TestFeaturesPage: React.FC = () => {
               data-mcp-element-type="select"
               data-mcp-element-label="Fruit Selector"
               data-mcp-purpose="Select a fruit from the list"
+              data-mcp-custom-note="This is the main fruit selector for testing."
+              data-mcp-item-priority="1"
             >
               <option value="option1" data-mcp-element-label="Apple Option">
                 Apple
@@ -154,6 +156,8 @@ const TestFeaturesPage: React.FC = () => {
                 data-mcp-element-type="checkbox"
                 data-mcp-element-label="Enable Extra Feature"
                 data-mcp-purpose="Toggle an extra feature on or off"
+                data-mcp-custom-note="This checkbox controls a critical test feature."
+                data-mcp-item-priority="high"
               />
               <label className="form-check-label" htmlFor="test-checkbox">
                 Enable Extra Feature

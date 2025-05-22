@@ -110,6 +110,85 @@ The `runMcpServer` function takes an `McpServerOptions` object. Key options incl
     - `sourceIp: string | undefined`: Source IP address of the MCP client.
   - Your function should return `true` to allow the connection or `false` to deny it (which will result in a 401 Unauthorized response to the client).
   - This allows you to implement custom security logic, such as validating API keys, session tokens, or IP whitelists.
+- `customAttributeReaders` (`CustomAttributeReader[]`, optional): Allows you to define how additional custom `data-mcp-*` attributes should be read from your HTML elements and processed.
+  - Each `CustomAttributeReader` object in the array should specify:
+    - `attributeName` (string, required): The full name of the custom data attribute (e.g., `"data-mcp-priority"`).
+    - `outputKey` (string, required): The key under which the extracted value will be stored in the `customData` field of an `InteractiveElementInfo` object.
+    - `processValue` (function, optional): `(attributeValue: string | null, elementHandle?: import("playwright").ElementHandle) => any;`
+      - An optional function to process the raw attribute string value. If not provided, the raw string value (or `undefined` if the attribute is not found on an element) will be used.
+      - `attributeValue`: The raw string value of the attribute (or `null` if not present).
+      - `elementHandle`: The Playwright `ElementHandle` for more complex processing if needed (e.g., inspecting other properties or child elements).
+      - Returns the processed value to be stored.
+  - When `customAttributeReaders` are provided, the `InteractiveElementInfo` objects returned by `get_current_screen_data` (and used internally) will include a `customData: Record<string, any>` field containing the data extracted by your readers.
+
+**Example: Using `customAttributeReaders`**
+
+Let's say you want to extract a `data-mcp-widget-type` and a `data-mcp-item-status` from your elements.
+
+_In your server setup (e.g., `your-custom-mcp-server.ts`):_
+
+```typescript
+import { McpServerOptions, CustomAttributeReader } from "mcp-ui-bridge";
+
+const myCustomReaders: CustomAttributeReader[] = [
+  {
+    attributeName: "data-mcp-widget-type",
+    outputKey: "widgetType", // Will appear as customData.widgetType
+  },
+  {
+    attributeName: "data-mcp-item-status",
+    outputKey: "status", // Will appear as customData.status
+    processValue: (value: string | null) => {
+      if (value === null) return "unknown"; // Default if attribute not present
+      return value.toUpperCase(); // Example processing: convert to uppercase
+    },
+  },
+];
+
+const options: McpServerOptions = {
+  targetUrl: "http://localhost:3000",
+  // ... other options
+  customAttributeReaders: myCustomReaders,
+};
+// ... rest of your server setup with runMcpServer(options)
+```
+
+_In your HTML/JSX:_
+
+```html
+<button
+  data-mcp-interactive-element="action-button-1"
+  data-mcp-widget-type="special-action-button"
+  data-mcp-item-status="pending"
+>
+  Process Item
+</button>
+
+<div
+  data-mcp-interactive-element="info-display-1"
+  data-mcp-widget-type="info-panel"
+>
+  Some information
+</div>
+```
+
+_Expected `customData` in `InteractiveElementInfo` (for `action-button-1`):_
+
+```json
+{
+  "widgetType": "special-action-button",
+  "status": "PENDING"
+}
+```
+
+_Expected `customData` in `InteractiveElementInfo` (for `info-display-1`):_
+
+```json
+{
+  "widgetType": "info-panel",
+  "status": "UNKNOWN"
+}
+```
 
 ## How It Works
 

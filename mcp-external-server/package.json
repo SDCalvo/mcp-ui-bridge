@@ -17,7 +17,7 @@
     "author": "",
     "license": "ISC",
     "dependencies": {
-        "mcp-ui-bridge": "^0.1.0"
+        "mcp-ui-bridge": "file:../react-cli-mcp"
     },
     "devDependencies": {
         "@types/node": "^20.14.12",

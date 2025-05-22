@@ -80,6 +80,7 @@ export interface InteractiveElementInfo {
   updatesContainer?: string; // From data-mcp-updates-container (ID of container it updates)
   navigatesTo?: string; // From data-mcp-navigates-to (URL or view identifier)
   customState?: string; // From data-mcp-element-state
+  customData?: Record<string, any>; // For user-defined custom attributes
   // We can add more properties like attributes, etc. later
 }
 
@@ -209,4 +210,32 @@ export interface McpServerOptions {
    * This might be included in a system prompt by the MCP client.
    */
   serverInstructions?: string;
+
+  /**
+   * Optional. An array of custom attribute reader configurations.
+   * Allows users to specify additional `data-mcp-*` attributes to be extracted
+   * by the DomParser and included in `InteractiveElementInfo.customData`.
+   */
+  customAttributeReaders?: CustomAttributeReader[];
+}
+
+/**
+ * Defines how a custom data attribute should be read and processed.
+ */
+export interface CustomAttributeReader {
+  /** The full name of the custom data attribute (e.g., "data-mcp-priority"). */
+  attributeName: string;
+  /** The key under which the extracted value will be stored in `InteractiveElementInfo.customData`. */
+  outputKey: string;
+  /**
+   * Optional. A function to process the raw attribute string value.
+   * If not provided, the raw string value (or undefined if not found) will be used.
+   * @param attributeValue The raw string value of the attribute. Can be null if attribute not present.
+   * @param elementHandle The Playwright ElementHandle, for more complex processing if needed.
+   * @returns The processed value to be stored.
+   */
+  processValue?: (
+    attributeValue: string | null,
+    elementHandle?: import("playwright").ElementHandle // Forward reference
+  ) => any;
 }
