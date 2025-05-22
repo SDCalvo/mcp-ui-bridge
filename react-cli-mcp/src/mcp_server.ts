@@ -1,11 +1,10 @@
-import { FastMCP, UserError } from "fastmcp";
+import { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { PlaywrightController } from "./core/playwright-controller.js";
 import { DomParser } from "./core/dom-parser.js";
 import {
   InteractiveElementInfo,
   ActionResult,
-  ParserResult,
   PlaywrightErrorType,
   McpServerOptions,
   ClientAuthContext,
