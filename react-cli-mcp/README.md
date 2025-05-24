@@ -218,29 +218,27 @@ export interface CustomActionHandlerParams {
   automation: AutomationInterface; // Safe methods to interact with the browser
 }
 
-// The AutomationInterface provides methods like:
-// automation.click(elementId): Promise<ActionResult>
-// automation.type(elementId, text): Promise<ActionResult>
-// automation.getElementState(elementId): Promise<ActionResult<Partial<InteractiveElementInfo> | null>>
-// ...and others (see AutomationInterface definition in types/index.ts for full list)
+The AutomationInterface provides methods like:
+automation.click(elementId): Promise<ActionResult>
+automation.type(elementId, text): Promise<ActionResult>
+automation.getElementState(elementId): Promise<ActionResult<Partial<InteractiveElementInfo> | null>>
+...and others (see AutomationInterface definition in types/index.ts for full list)
 
-// Your custom handler will receive an `automation` object of type `AutomationInterface`.
-// This interface provides the following curated and safe methods to interact with the browser:
-//
-// | Method                 | Description                                                                                    | Parameters                                     | Returns                     |
-// |------------------------|------------------------------------------------------------------------------------------------|------------------------------------------------|-----------------------------|
-// | `click`                | Clicks an element.                                                                             | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
-// | `type`                 | Types text into an element.                                                                    | `elementId: string`, `text: string`, `timeout?: number` | `Promise<ActionResult>`     |
-// | `selectOption`         | Selects an option within a `<select>` element.                                                 | `elementId: string`, `value: string`, `timeout?: number` | `Promise<ActionResult>`     |
-// | `checkElement`         | Checks a checkbox or radio button.                                                             | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
-// | `uncheckElement`       | Unchecks a checkbox.                                                                           | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
-// | `selectRadioButton`    | Selects a radio button within a group (identified by one of its members' `elementId`).        | `radioButtonIdInGroup: string`, `valueToSelect: string`, `timeout?: number` | `Promise<ActionResult>`     |
-// | `hoverElement`         | Hovers over an element.                                                                        | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
-// | `clearElement`         | Clears the content of an input element.                                                        | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
-// | `getElementState`      | Retrieves the state of a specific interactive element, including its custom data.              | `elementId: string`, `timeout?: number`          | `Promise<ActionResult<Partial<InteractiveElementInfo> | null>>` |
-//
-// More automation methods may be added to `AutomationInterface` in the future as needed.
-// All methods return a `Promise<ActionResult>` consistent with other library operations.
+Your custom handler will receive an `automation` object of type `AutomationInterface` in the `params`. This interface provides a curated set of safe methods to interact with the browser page. All methods return a `Promise<ActionResult>` consistent with other library operations.
+
+Key methods available on `params.automation` include:
+
+- **`click(elementId: string, timeout?: number)`**: Clicks an element.
+- **`type(elementId: string, text: string, timeout?: number)`**: Types text into an element.
+- **`selectOption(elementId: string, value: string, timeout?: number)`**: Selects an option within a `<select>` element.
+- **`checkElement(elementId: string, timeout?: number)`**: Checks a checkbox or radio button.
+- **`uncheckElement(elementId: string, timeout?: number)`**: Unchecks a checkbox.
+- **`selectRadioButton(radioButtonIdInGroup: string, valueToSelect: string, timeout?: number)`**: Selects a radio button within a group (identified by one of its members' `elementId`). `valueToSelect` is typically the `value` attribute of the radio button to select.
+- **`hoverElement(elementId: string, timeout?: number)`**: Hovers over an element.
+- **`clearElement(elementId: string, timeout?: number)`**: Clears the content of an input element.
+- **`getElementState(elementId: string, timeout?: number)`**: Retrieves the state of a specific interactive element, including its `customData`, as `Promise<ActionResult<Partial<InteractiveElementInfo> | null>>`.
+
+More automation methods may be added to `AutomationInterface` in the future as needed.
 ```
 
 **How it Works:**
