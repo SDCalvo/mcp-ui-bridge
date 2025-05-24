@@ -190,6 +190,166 @@ _Expected `customData` in `InteractiveElementInfo` (for `info-display-1`):_
 }
 ```
 
+## Custom Action Handlers (`customActionHandlers`)
+
+The `customActionHandlers` option in `McpServerOptions` allows you to extend or modify the command processing capabilities of the `mcp-ui-bridge` server. You can introduce entirely new commands or change how existing core commands (like `click`, `type`, etc.) behave.
+
+Each handler is defined as a `CustomActionHandler` object:
+
+```typescript
+import {
+  McpServerOptions,
+  CustomActionHandler,
+  CustomActionHandlerParams,
+  ActionResult,
+  InteractiveElementInfo,
+  AutomationInterface,
+} from "mcp-ui-bridge";
+
+export interface CustomActionHandler {
+  commandName: string; // The first word of the command (e.g., "click", "my-custom-verb")
+  handler: (params: CustomActionHandlerParams) => Promise<ActionResult>; // Your function
+  overrideCoreBehavior?: boolean; // Default: false. If true and commandName matches a core command, this handler is used instead.
+}
+
+export interface CustomActionHandlerParams {
+  element: InteractiveElementInfo; // Full details of the targeted element (if command includes #elementId)
+  commandArgs: string[]; // Arguments from the command string after elementId
+  automation: AutomationInterface; // Safe methods to interact with the browser
+}
+
+// The AutomationInterface provides methods like:
+// automation.click(elementId): Promise<ActionResult>
+// automation.type(elementId, text): Promise<ActionResult>
+// automation.getElementState(elementId): Promise<ActionResult<Partial<InteractiveElementInfo> | null>>
+// ...and others (see AutomationInterface definition in types/index.ts for full list)
+
+// Your custom handler will receive an `automation` object of type `AutomationInterface`.
+// This interface provides the following curated and safe methods to interact with the browser:
+//
+// | Method                 | Description                                                                                    | Parameters                                     | Returns                     |
+// |------------------------|------------------------------------------------------------------------------------------------|------------------------------------------------|-----------------------------|
+// | `click`                | Clicks an element.                                                                             | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
+// | `type`                 | Types text into an element.                                                                    | `elementId: string`, `text: string`, `timeout?: number` | `Promise<ActionResult>`     |
+// | `selectOption`         | Selects an option within a `<select>` element.                                                 | `elementId: string`, `value: string`, `timeout?: number` | `Promise<ActionResult>`     |
+// | `checkElement`         | Checks a checkbox or radio button.                                                             | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
+// | `uncheckElement`       | Unchecks a checkbox.                                                                           | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
+// | `selectRadioButton`    | Selects a radio button within a group (identified by one of its members' `elementId`).        | `radioButtonIdInGroup: string`, `valueToSelect: string`, `timeout?: number` | `Promise<ActionResult>`     |
+// | `hoverElement`         | Hovers over an element.                                                                        | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
+// | `clearElement`         | Clears the content of an input element.                                                        | `elementId: string`, `timeout?: number`          | `Promise<ActionResult>`     |
+// | `getElementState`      | Retrieves the state of a specific interactive element, including its custom data.              | `elementId: string`, `timeout?: number`          | `Promise<ActionResult<Partial<InteractiveElementInfo> | null>>` |
+//
+// More automation methods may be added to `AutomationInterface` in the future as needed.
+// All methods return a `Promise<ActionResult>` consistent with other library operations.
+```
+
+**How it Works:**
+When the `send_command` tool receives a command string:
+
+1. It parses the command into `commandName`, `elementId` (if present, e.g., `#my-button`), and `commandArgs`.
+2. If a `CustomActionHandler` is registered with a matching `commandName`:
+   - The server fetches the `InteractiveElementInfo` for the specified `elementId`.
+   - It then invokes your `handler` function with the `CustomActionHandlerParams`.
+   - Your handler is responsible for performing the action and returning an `ActionResult`.
+3. If `overrideCoreBehavior` is `true` for a command name that matches a core command (e.g., "click"), your custom handler will execute _instead_ of the default behavior.
+4. If no custom handler is found, or if one exists for a core command name but `overrideCoreBehavior` is `false`, the server attempts to execute its built-in logic for core commands.
+5. If the command is not recognized as a custom or core command, an error is returned.
+
+**Example 1: Adding a New Custom Command `summarize-text #elementId`**
+
+_In your server setup (e.g., `your-mcp-server.ts`):_
+
+```typescript
+const myCustomHandlers: CustomActionHandler[] = [
+  {
+    commandName: "summarize-text",
+    handler: async (
+      params: CustomActionHandlerParams
+    ): Promise<ActionResult> => {
+      console.log(
+        `Custom 'summarize-text' called for element: ${params.element.id}`
+      );
+      const textContent =
+        params.element.currentValue ||
+        (await params.automation.getElementState(params.element.id)).data
+          ?.currentValue;
+
+      if (textContent === undefined || textContent === null) {
+        return {
+          success: false,
+          message: "No text content found to summarize.",
+        };
+      }
+
+      // In a real scenario, you might call an LLM here to summarize.
+      // For this example, we'll just truncate and add a note.
+      const summary =
+        textContent.length > 50
+          ? textContent.substring(0, 47) + "..."
+          : textContent;
+
+      return {
+        success: true,
+        message: `Summary for ${params.element.id}: ${summary}`,
+        data: { summary, originalLength: textContent.length },
+      };
+    },
+  },
+];
+
+const options: McpServerOptions = {
+  // ... other options
+  customActionHandlers: myCustomHandlers,
+};
+// runMcpServer(options);
+```
+
+_Command LLM might send:_ `send_command summarize-text #my-text-area`
+
+**Example 2: Overriding the Core `click` Command for a Specific Element Type**
+
+Let's say you want to add extra logging or a confirmation step before any element with `elementType: "critical-button"` is clicked.
+
+_In your server setup:_
+
+```typescript
+const criticalClickOverride: CustomActionHandler = {
+  commandName: "click",
+  overrideCoreBehavior: true, // This is key to replace the default click
+  handler: async (params: CustomActionHandlerParams): Promise<ActionResult> => {
+    if (params.element.elementType === "critical-button") {
+      console.log(
+        `[AUDIT] Critical button ${params.element.id} about to be clicked.`
+      );
+      // You could add a delay, ask for a simulated confirmation, etc.
+      // For now, just log and proceed with the original click.
+      const result = await params.automation.click(params.element.id);
+      if (result.success) {
+        result.message =
+          "Critical button clicked successfully via override! " +
+          (result.message || "");
+      }
+      return result;
+    } else {
+      // Not a critical button, so perform the standard click action directly.
+      // This ensures other clicks behave normally if this handler is the only one for "click".
+      console.log(
+        `Standard click on ${params.element.id} via override passthrough.`
+      );
+      return params.automation.click(params.element.id);
+    }
+  },
+};
+
+const options: McpServerOptions = {
+  // ... other options
+  customActionHandlers: [criticalClickOverride],
+};
+// runMcpServer(options);
+```
+
+This allows for fine-grained control over interactions, enabling complex workflows or tailored behaviors for specific UI elements directly from your MCP server logic.
+
 ## How It Works
 
 1.  **Semantic Instrumentation (by You)**: You, as the developer of a web application, annotate your HTML elements with specific `data-mcp-*` attributes (detailed below). These attributes provide semantic meaning about your UI's structure, interactive elements, and their purpose.

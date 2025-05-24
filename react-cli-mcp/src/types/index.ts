@@ -217,6 +217,8 @@ export interface McpServerOptions {
    * by the DomParser and included in `InteractiveElementInfo.customData`.
    */
   customAttributeReaders?: CustomAttributeReader[];
+
+  customActionHandlers?: CustomActionHandler[];
 }
 
 /**
@@ -238,4 +240,71 @@ export interface CustomAttributeReader {
     attributeValue: string | null,
     elementHandle?: import("playwright").ElementHandle // Forward reference
   ) => any;
+}
+
+// --- Types for Custom Action Handlers (Phase 3.6.2) ---
+
+/**
+ * Interface defining a safe and simplified set of automation methods
+ * that can be passed to custom action handlers.
+ * This will wrap methods from PlaywrightController.
+ */
+export interface AutomationInterface {
+  click: (elementId: string, timeout?: number) => Promise<ActionResult>;
+  type: (
+    elementId: string,
+    text: string,
+    timeout?: number
+  ) => Promise<ActionResult>;
+  selectOption: (
+    elementId: string,
+    value: string,
+    timeout?: number
+  ) => Promise<ActionResult>;
+  checkElement: (elementId: string, timeout?: number) => Promise<ActionResult>;
+  uncheckElement: (
+    elementId: string,
+    timeout?: number
+  ) => Promise<ActionResult>;
+  selectRadioButton: (
+    radioButtonIdInGroup: string,
+    valueToSelect: string, // This might be the elementId of the radio itself or its value
+    timeout?: number
+  ) => Promise<ActionResult>;
+  hoverElement: (elementId: string, timeout?: number) => Promise<ActionResult>;
+  clearElement: (elementId: string, timeout?: number) => Promise<ActionResult>;
+  getElementState: (
+    elementId: string,
+    timeout?: number
+  ) => Promise<ActionResult<Partial<InteractiveElementInfo> | null>>;
+  // Potentially add navigate, screenshot, etc. later if deemed safe and necessary
+}
+
+/**
+ * Parameters passed to a custom action handler callback.
+ */
+export interface CustomActionHandlerParams {
+  element: InteractiveElementInfo; // The interactive element targeted by the command
+  commandArgs: string[]; // Arguments extracted from the command string after the elementId
+  automation: AutomationInterface; // Safe automation methods
+  // page?: import("playwright").Page; // Optional: For very advanced use, consider risks
+}
+
+/**
+ * Callback function type for a custom action handler.
+ * It receives parameters about the target element and command,
+ * and an automation interface to perform actions.
+ * It must return an ActionResult.
+ */
+export type CustomActionHandlerCallback = (
+  params: CustomActionHandlerParams
+) => Promise<ActionResult>;
+
+/**
+ * Defines a custom action handler that can be registered by the user.
+ */
+export interface CustomActionHandler {
+  commandName: string; // The first word of the command (e.g., "click", "myCustomAction")
+  handler: CustomActionHandlerCallback; // The function to execute for this command
+  overrideCoreBehavior?: boolean; // Default: false. If true and commandName matches a core command, this handler is used instead.
 }

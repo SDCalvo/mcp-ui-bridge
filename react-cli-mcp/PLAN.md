@@ -250,6 +250,7 @@ The `DomParser` currently:
         - [x] Read the specified attribute using `getElementAttribute`.
         - [x] If found, populate `elementInfo.customData[reader.outputKey]` using `reader.processValue` if provided, or the raw value.
         - [x] Handle potential errors from `processValue` gracefully (log warning, store error marker).
+        - [x] Update logging to include extracted custom data.
       - [x] Update logging to include extracted custom data.
     - **Task 3.6.1.3**: Enhance `PlaywrightController` (`src/core/playwright-controller.ts`)
       - [x] Modify constructor to accept and store `customAttributeReaders`.
@@ -257,24 +258,46 @@ The `DomParser` currently:
     - **Task 3.6.1.4**: Update `mcp_server.ts`
       - [x] Pass `options.customAttributeReaders` from `McpServerOptions` to `DomParser` and `PlaywrightController` constructors.
     - **Task 3.6.1.5**: Documentation
-      - [ ] Document how to use `CustomAttributeReader` when using `mcp-ui-bridge` as a library.
-      - [ ] Note that initial CLI configuration for this feature (via env vars) is deferred.
+      - [ ] Update `README.md` to explain how to use `customAttributeReaders` in `McpServerOptions`.
+      - [ ] Provide examples of custom attribute definitions and their usage in the frontend.
 
-  - **Sub-Phase 3.6.2: Custom Action Handlers (Future)**
+  - **Sub-Phase 3.6.2: Custom Action Handlers**
 
-    - [ ] Define `CustomActionDefinition` (e.g., `commandName`, `parameterSchema` (Zod), `description`, `execute` function taking `elementId` and parsed args).
-    - [ ] Define how custom actions are suggested (e.g., an `appliesTo(elementInfo: InteractiveElementInfo) => boolean` predicate in `CustomActionDefinition`).
-    - [ ] `mcp_server.ts`:
-      - [ ] Register custom actions as new tools in `FastMCP`.
-      - [ ] `get_current_screen_actions` to use `appliesTo` predicates to suggest custom commands.
-    - [ ] `PlaywrightController` might need a generic way to invoke these custom action `execute` functions or they are self-contained.
+    - **Goal**: Enable library users to define their own logic for handling specific commands (either entirely new custom commands or overriding default behaviors for existing commands like `click` or `type`) associated with `data-mcp-*` attributes or general interactions.
+    - **Approach**:
+      - Define an `AutomationInterface` to expose safe Playwright actions.
+      - Define types for handler parameters and callbacks.
+      - Allow users to register `CustomActionHandler` objects via `McpServerOptions`.
+      - Modify `mcp_server.ts` to prioritize custom handlers and fall back to core logic.
+    - **Tasks**:
+      - **Task 3.6.2.1**: Define Types in `src/types/index.ts`
+        - [x] Define `AutomationInterface` (to wrap safe PlaywrightController actions).
+        - [x] Define `CustomActionHandlerParams` (input for custom handlers: `element: InteractiveElementInfo`, `commandArgs: string[]`, `automation: AutomationInterface`).
+        - [x] Define `CustomActionHandlerCallback` (function type: `(params: CustomActionHandlerParams) => Promise<ActionResult>;`).
+        - [x] Define `CustomActionHandler` (interface: `commandName: string`, `handler: CustomActionHandlerCallback`, `overrideCoreBehavior?: boolean`).
+        - [x] Add `customActionHandlers?: CustomActionHandler[];` to `McpServerOptions`.
+      - **Task 3.6.2.2**: Implement `AutomationInterface`
+        - [x] Create methods in/alongside `PlaywrightController` that wrap existing actions (e.g., `click`, `type`) providing a simplified and safe API.
+      - **Task 3.6.2.3**: Enhance `mcp_server.ts`
+        - [x] In `runMcpServer`:
+          - [x] Accept `customActionHandlers` from `McpServerOptions`.
+          - [x] Store handlers (e.g., in a `Map<string, CustomActionHandler>`).
+        - [x] In `send_command` tool logic:
+          - [x] Parse `command_string` to get `commandName`, `elementId`, and `commandArgs`.
+          - [x] If a registered custom handler matches `commandName`:
+            - [x] Fetch `InteractiveElementInfo` for `elementId` (e.g., using `playwrightController.getElementState()`).
+            - [x] Construct `CustomActionHandlerParams`.
+            - [x] Invoke the custom handler and return its `ActionResult`.
+          - [x] Else (no custom handler or not overriding core):
+            - [x] Execute existing built-in logic for core commands.
+          - [x] Else (unknown command):
+            - [x] Return "Unknown command" `ActionResult`.
+      - **Task 3.6.2.4**: Documentation
+        - [ ] Update `README.md` to explain how to define and use `customActionHandlers`.
+        - [ ] Provide examples of custom handlers for new commands and overriding existing ones.
 
-  - **Sub-Phase 3.6.3: Advanced `DomParser` Customization (Future)**
-    - [ ] Define `CustomElementProcessor` interface to allow users to:
-      - [ ] Override/supplement element type inference.
-      - [ ] Override/supplement label inference.
-      - [ ] Provide custom logic for `currentValue`, `isChecked`, or other `InteractiveElementInfo` state fields.
-    - [ ] `DomParser` to consult these processors.
+  - **Sub-Phase 3.6.3: Advanced Parser Customization (Future Consideration)**
+    - **Goal**: Allow users to inject custom logic directly into the DOM parsing process.
 
 ## 8. Key Challenges & Risks
 

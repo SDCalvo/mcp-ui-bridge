@@ -10,9 +10,14 @@ import {
   ClientAuthContext,
   AuthenticateClientCallback,
   CustomAttributeReader,
+  CustomActionHandler,
+  AutomationInterface,
+  CustomActionHandlerParams,
 } from "./types/index.js";
 import { pathToFileURL } from "url";
 import { resolve } from "path";
+import { AutomationInterfaceImpl } from "./core/playwright-controller.js";
+import { DomParserErrorType } from "./types/index.js";
 
 // Explicitly re-export the types needed by consumers of the library
 export {
@@ -20,6 +25,13 @@ export {
   ClientAuthContext,
   type AuthenticateClientCallback,
   type CustomAttributeReader,
+  type CustomActionHandler,
+  type AutomationInterface,
+  type CustomActionHandlerParams,
+  type ActionResult,
+  type InteractiveElementInfo,
+  PlaywrightErrorType,
+  DomParserErrorType,
 };
 
 console.log("[mcp_server.ts] Initializing FastMCP server logic...");
@@ -28,12 +40,17 @@ console.log("[mcp_server.ts] Initializing FastMCP server logic...");
 // These will be initialized by runMcpServer via initializeBrowserAndDependencies
 let playwrightController: PlaywrightController | null = null;
 let domParser: DomParser | null = null;
+let automationInterface: AutomationInterface | null = null;
+let customActionHandlerMap: Map<string, CustomActionHandler> = new Map();
 
 // --- Core Server Function ---
 async function initializeBrowserAndDependencies(
   options: Pick<
     McpServerOptions,
-    "headlessBrowser" | "targetUrl" | "customAttributeReaders"
+    | "headlessBrowser"
+    | "targetUrl"
+    | "customAttributeReaders"
+    | "customActionHandlers"
   >
 ): Promise<void> {
   console.log(
@@ -43,6 +60,34 @@ async function initializeBrowserAndDependencies(
     { headless: options.headlessBrowser },
     options.customAttributeReaders || []
   );
+  automationInterface = new AutomationInterfaceImpl(playwrightController);
+
+  // Store custom action handlers
+  if (options.customActionHandlers) {
+    options.customActionHandlers.forEach((handler) => {
+      if (
+        customActionHandlerMap.has(handler.commandName) &&
+        !handler.overrideCoreBehavior
+      ) {
+        console.warn(
+          `[mcp_server.ts] Custom action handler for command "${handler.commandName}" already exists and overrideCoreBehavior is false. Skipping duplicate.`
+        );
+      } else {
+        if (
+          customActionHandlerMap.has(handler.commandName) &&
+          handler.overrideCoreBehavior
+        ) {
+          console.log(
+            `[mcp_server.ts] Overriding core/existing custom handler for command "${handler.commandName}" with new custom handler.`
+          );
+        }
+        customActionHandlerMap.set(handler.commandName, handler);
+      }
+    });
+    console.log(
+      `[mcp_server.ts] Registered ${customActionHandlerMap.size} custom action handler(s).`
+    );
+  }
 
   const launchResult = await playwrightController.launch();
   if (!launchResult.success || !playwrightController.getPage()) {
@@ -358,13 +403,13 @@ function addSendCommandTool(mcpServer: FastMCP<any>) {
       command_string: z.string(),
     }),
     execute: async (args) => {
-      if (!playwrightController) {
+      if (!playwrightController || !automationInterface) {
         console.error(
-          "[mcp_server.ts] send_command: PlaywrightController not initialized."
+          "[mcp_server.ts] send_command: PlaywrightController or AutomationInterface not initialized."
         );
         return JSON.stringify({
           success: false,
-          message: "PlaywrightController not initialized.",
+          message: "Server components not initialized.",
           errorType: PlaywrightErrorType.NotInitialized,
         });
       }
@@ -372,71 +417,198 @@ function addSendCommandTool(mcpServer: FastMCP<any>) {
       const commandString = args.command_string.trim();
       console.log(`[mcp_server.ts] Received command: ${commandString}`);
 
+      // --- Command Parsing ---
+      // Generalized parsing for command, elementId (if present), and arguments
+      const parts = commandString.match(/(\S+)(?:\s+#([^\s]+))?(.*)/);
+      if (!parts) {
+        console.warn("[mcp_server.ts] Unrecognized command format.");
+        return JSON.stringify({
+          success: false,
+          message: "Invalid command string format.",
+          errorType: PlaywrightErrorType.InvalidInput,
+        });
+      }
+
+      const commandName = parts[1].toLowerCase();
+      const elementId = parts[2]; // Might be undefined if no #elementId
+      const remainingArgsString = parts[3] ? parts[3].trim() : "";
+
+      // Basic argument splitting (handles simple quoted arguments, but not escaped quotes within)
+      // For more robust parsing, a dedicated argument parser library might be needed.
+      const commandArgs: string[] = [];
+      if (remainingArgsString) {
+        const argRegex = /"[^"]+"|\S+/g; // Matches quoted strings or non-whitespace sequences
+        let match;
+        while ((match = argRegex.exec(remainingArgsString)) !== null) {
+          commandArgs.push(match[0].replace(/^"|"$/g, "")); // Remove surrounding quotes
+        }
+      }
+
+      console.log(
+        `[mcp_server.ts] Parsed Command: name='${commandName}', elementId='${elementId}', args=${JSON.stringify(
+          commandArgs
+        )}`
+      );
+
       let result: ActionResult<any> = {
         success: false,
-        message: "Invalid command string.",
+        message: `Command "${commandName}" not recognized or failed.`,
         errorType: PlaywrightErrorType.InvalidInput,
       };
 
-      // Improved regex to handle quoted strings more robustly
-      const clickMatch = commandString.match(/^click #([^\s]+)$/i);
-      const typeMatch = commandString.match(/^type #([^\s]+) "(.*)"$/i); // Allows spaces in typed text
-      const selectMatch = commandString.match(/^select #([^\s]+) "(.*)"$/i);
-      const checkMatch = commandString.match(/^check #([^\s]+)$/i);
-      const uncheckMatch = commandString.match(/^uncheck #([^\s]+)$/i);
-      // choose #elementId or choose #elementId in_group groupName
-      const chooseMatch = commandString.match(
-        /^choose #([^\s]+)(?:\s+in_group\s+([^\s]+))?$/i
-      );
+      // --- Custom Handler Check ---
+      const customHandler = customActionHandlerMap.get(commandName);
 
-      if (clickMatch) {
-        const elementId = clickMatch[1];
-        console.log(`[mcp_server.ts] Executing click on #${elementId}`);
-        result = await playwrightController.click(elementId);
-      } else if (typeMatch) {
-        const elementId = typeMatch[1];
-        const textToType = typeMatch[2];
+      if (customHandler) {
         console.log(
-          `[mcp_server.ts] Executing type "${textToType}" into #${elementId}`
+          `[mcp_server.ts] Custom handler found for command "${commandName}".`
+        );
+        if (!elementId && commandName !== "navigate") {
+          // Most custom commands will target an element
+          console.warn(
+            `[mcp_server.ts] Command "${commandName}" seems to require an element ID (#elementId) but none was provided.`
+          );
+          return JSON.stringify({
+            success: false,
+            message: `Command "${commandName}" requires an element ID.`,
+            errorType: PlaywrightErrorType.InvalidInput,
+          });
+        }
+
+        let targetElementInfo: InteractiveElementInfo | null = null;
+        if (elementId) {
+          // Fetch element state if elementId is present
+          const stateResult = await playwrightController.getElementState(
+            elementId
+          );
+          if (!stateResult.success || !stateResult.data) {
+            console.warn(
+              `[mcp_server.ts] Failed to get state for element #${elementId} for custom handler: ${stateResult.message}`
+            );
+            return JSON.stringify({
+              success: false,
+              message: `Failed to get element state for #${elementId}: ${stateResult.message}`,
+              errorType:
+                stateResult.errorType || PlaywrightErrorType.ElementNotFound,
+            });
+          }
+          targetElementInfo = stateResult.data as InteractiveElementInfo; // Assuming getElementState returns full info if successful
+        }
+
+        try {
+          result = await customHandler.handler({
+            // @ts-ignore TODO: Fix this, elementId is not present in navigate command
+            element: targetElementInfo!, // Pass the fetched element info
+            commandArgs,
+            automation: automationInterface,
+          });
+          console.log(
+            `[mcp_server.ts] Custom handler for "${commandName}" executed.`
+          );
+          return JSON.stringify(result);
+        } catch (e: any) {
+          console.error(
+            `[mcp_server.ts] Error in custom handler for "${commandName}":`,
+            e
+          );
+          return JSON.stringify({
+            success: false,
+            message: `Error executing custom handler for "${commandName}": ${e.message}`,
+            errorType: PlaywrightErrorType.ActionFailed,
+          });
+        }
+      } else if (
+        // Check if it's a core command that *could* have been overridden but wasn't
+        ["click", "type", "select", "check", "uncheck", "choose"].includes(
+          commandName
+        ) &&
+        customActionHandlerMap.has(commandName) && // A handler exists
+        !customActionHandlerMap.get(commandName)!.overrideCoreBehavior // But it's not set to override
+      ) {
+        // This case means: a custom handler for a core command name exists, but overrideCoreBehavior is false.
+        // So, we proceed to core logic. The custom handler is effectively ignored for this invocation.
+        console.log(
+          `[mcp_server.ts] Custom handler for core command "${commandName}" exists but 'overrideCoreBehavior' is false. Proceeding with core logic.`
+        );
+      }
+
+      // --- Core Command Logic (if no custom handler or not overridden) ---
+      // Ensure elementId is present for core commands that require it
+      if (
+        !elementId &&
+        ["click", "type", "select", "check", "uncheck", "choose"].includes(
+          commandName
+        )
+      ) {
+        console.warn(
+          `[mcp_server.ts] Core command "${commandName}" requires an element ID (#elementId) but none was provided.`
+        );
+        return JSON.stringify({
+          success: false,
+          message: `Core command "${commandName}" requires an element ID.`,
+          errorType: PlaywrightErrorType.InvalidInput,
+        });
+      }
+
+      // The original command parsing logic is now more targeted
+      if (commandName === "click" && elementId) {
+        console.log(`[mcp_server.ts] Executing core click on #${elementId}`);
+        result = await playwrightController.click(elementId);
+      } else if (
+        commandName === "type" &&
+        elementId &&
+        commandArgs.length > 0
+      ) {
+        const textToType = commandArgs[0];
+        console.log(
+          `[mcp_server.ts] Executing core type "${textToType}" into #${elementId}`
         );
         result = await playwrightController.type(elementId, textToType);
-      } else if (selectMatch) {
-        const elementId = selectMatch[1];
-        const valueToSelect = selectMatch[2];
+      } else if (
+        commandName === "select" &&
+        elementId &&
+        commandArgs.length > 0
+      ) {
+        const valueToSelect = commandArgs[0];
         console.log(
-          `[mcp_server.ts] Executing select "${valueToSelect}" for #${elementId}`
+          `[mcp_server.ts] Executing core select "${valueToSelect}" for #${elementId}`
         );
         result = await playwrightController.selectOption(
           elementId,
           valueToSelect
         );
-      } else if (checkMatch) {
-        const elementId = checkMatch[1];
-        console.log(`[mcp_server.ts] Executing check on #${elementId}`);
+      } else if (commandName === "check" && elementId) {
+        console.log(`[mcp_server.ts] Executing core check on #${elementId}`);
         result = await playwrightController.checkElement(elementId);
-      } else if (uncheckMatch) {
-        const elementId = uncheckMatch[1];
-        console.log(`[mcp_server.ts] Executing uncheck on #${elementId}`);
+      } else if (commandName === "uncheck" && elementId) {
+        console.log(`[mcp_server.ts] Executing core uncheck on #${elementId}`);
         result = await playwrightController.uncheckElement(elementId);
-      } else if (chooseMatch) {
-        const elementId = chooseMatch[1];
-        const groupName = chooseMatch[2]; // This might be undefined if not provided
+      } else if (commandName === "choose" && elementId) {
+        // `choose` implies selecting a radio button by its value/id
+        // For 'choose', the value to select is often the elementId itself or a value attribute.
+        // We assume the commandArg[0] might be the value if provided, otherwise elementId.
+        const valueToSelect =
+          commandArgs.length > 0 ? commandArgs[0] : elementId;
         console.log(
-          `[mcp_server.ts] Executing choose on #${elementId}${
-            groupName ? " in group " + groupName : ""
-          }`
+          `[mcp_server.ts] Executing core choose on #${elementId} with value "${valueToSelect}"`
         );
-        // We'll pass elementId as the primary identifier. PlaywrightController
-        // might use groupName if available to ensure it's choosing the correct radio from a named group.
-        // For now, the controller primarily uses the elementId of the specific radio.
         result = await playwrightController.selectRadioButton(
           elementId,
-          elementId
-        ); // valueToSelect can be the ID itself for radio
-      } else {
-        console.warn("[mcp_server.ts] Unrecognized command format.");
-        // Result is already set to invalid command string
+          valueToSelect
+        );
+      } else if (!customActionHandlerMap.has(commandName)) {
+        // Only if no custom handler was defined at all
+        console.warn(`[mcp_server.ts] Unrecognized command: ${commandName}`);
+        result = {
+          // Update result for unrecognized command
+          success: false,
+          message: `Command "${commandName}" is not a recognized core command and no custom handler is registered for it.`,
+          errorType: PlaywrightErrorType.InvalidInput,
+        };
       }
+      // If a custom handler was found but not executed due to overrideCoreBehavior=false,
+      // and it matched a core command, the core logic above would have run.
+      // If it was a custom command name not matching core logic, and no custom handler was run, this final 'else' is not hit.
 
       return JSON.stringify(result);
     },
@@ -467,19 +639,18 @@ export async function runMcpServer(options: McpServerOptions): Promise<void> {
   }
 
   console.log(
-    `[mcp_server.ts] runMcpServer called with options: ${JSON.stringify({
-      ...options,
-      // Redact sensitive parts if any for logging, though current options are not sensitive
-    })}`
+    `[mcp_server.ts] runMcpServer called with options: ${JSON.stringify(
+      options
+    )}`
   );
 
   // Initialize browser and dependencies first
-  // Use provided options, falling back to defaults for headless and targetUrl if necessary
   await initializeBrowserAndDependencies({
     headlessBrowser:
-      options.headlessBrowser === undefined ? true : options.headlessBrowser, // Default to true (headless)
-    targetUrl: options.targetUrl, // targetUrl is mandatory in McpServerOptions
-    customAttributeReaders: options.customAttributeReaders || [], // Pass through
+      options.headlessBrowser === undefined ? true : options.headlessBrowser,
+    targetUrl: options.targetUrl,
+    customAttributeReaders: options.customAttributeReaders || [],
+    customActionHandlers: options.customActionHandlers || [],
   });
 
   const { authenticateClient } = options;

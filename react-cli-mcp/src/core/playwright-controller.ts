@@ -5,6 +5,7 @@ import {
   ActionResult,
   PlaywrightErrorType,
   CustomAttributeReader,
+  AutomationInterface,
 } from "../types/index.js";
 
 export class PlaywrightController {
@@ -852,5 +853,82 @@ export class PlaywrightController {
         data: null,
       };
     }
+  }
+}
+
+// --- Implementation of AutomationInterface for Custom Action Handlers ---
+
+/**
+ * Provides a safe and simplified set of automation methods, wrapping PlaywrightController.
+ * This is passed to custom action handlers.
+ */
+export class AutomationInterfaceImpl implements AutomationInterface {
+  constructor(private playwrightController: PlaywrightController) {}
+
+  async click(elementId: string, timeout?: number): Promise<ActionResult> {
+    return this.playwrightController.click(elementId, timeout);
+  }
+
+  async type(
+    elementId: string,
+    text: string,
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.type(elementId, text, timeout);
+  }
+
+  async selectOption(
+    elementId: string,
+    value: string,
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.selectOption(elementId, value, timeout);
+  }
+
+  async checkElement(
+    elementId: string,
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.checkElement(elementId, timeout);
+  }
+
+  async uncheckElement(
+    elementId: string,
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.uncheckElement(elementId, timeout);
+  }
+
+  async selectRadioButton(
+    radioButtonIdInGroup: string,
+    valueToSelect: string, // Matches PlaywrightController's expectation
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.selectRadioButton(
+      radioButtonIdInGroup,
+      valueToSelect,
+      timeout
+    );
+  }
+
+  async hoverElement(
+    elementId: string,
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.hoverElement(elementId, timeout);
+  }
+
+  async clearElement(
+    elementId: string,
+    timeout?: number
+  ): Promise<ActionResult> {
+    return this.playwrightController.clearElement(elementId, timeout);
+  }
+
+  async getElementState(
+    elementId: string,
+    timeout?: number
+  ): Promise<ActionResult<Partial<InteractiveElementInfo> | null>> {
+    return this.playwrightController.getElementState(elementId, timeout);
   }
 }

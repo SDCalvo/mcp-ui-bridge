@@ -3,6 +3,10 @@ import {
   McpServerOptions,
   ClientAuthContext,
   CustomAttributeReader,
+  CustomActionHandler,
+  CustomActionHandlerParams,
+  ActionResult,
+  InteractiveElementInfo,
 } from "mcp-ui-bridge";
 
 async function main() {
@@ -29,17 +33,107 @@ async function main() {
     },
   ];
 
+  // --- Define Custom Action Handlers ---
+  const customHandlers: CustomActionHandler[] = [
+    {
+      commandName: "get-custom-note",
+      handler: async (
+        params: CustomActionHandlerParams
+      ): Promise<ActionResult> => {
+        console.log(
+          `[Custom Handler] Executing get-custom-note for element: ${params.element.id}`
+        );
+        const note = params.element.customData?.customNote;
+        if (note !== undefined) {
+          return {
+            success: true,
+            message: `Custom note for ${params.element.id}: ${note}`,
+            data: { customNote: note },
+          };
+        }
+        return {
+          success: false,
+          message: `No customNote found for element ${params.element.id}`,
+        };
+      },
+    },
+    {
+      commandName: "check-priority",
+      handler: async (
+        params: CustomActionHandlerParams
+      ): Promise<ActionResult> => {
+        console.log(
+          `[Custom Handler] Executing check-priority for element: ${params.element.id} with args: ${params.commandArgs}`
+        );
+        const expectedPriority = params.commandArgs[0];
+        if (expectedPriority === undefined) {
+          return {
+            success: false,
+            message: "Expected priority argument is missing.",
+          };
+        }
+
+        const actualPriority = params.element.customData?.itemPriority;
+
+        if (actualPriority === undefined) {
+          return {
+            success: false,
+            message: `No itemPriority found for element ${params.element.id}`,
+          };
+        }
+
+        // Convert expectedPriority to number if actualPriority is a number for correct comparison
+        const numericExpectedPriority = parseInt(expectedPriority, 10);
+        const priorityToCompare =
+          typeof actualPriority === "number" && !isNaN(numericExpectedPriority)
+            ? numericExpectedPriority
+            : expectedPriority;
+
+        if (actualPriority == priorityToCompare) {
+          // Use loose equality to handle string vs number if necessary
+          return {
+            success: true,
+            message: `Priority matches for ${params.element.id}. Expected: ${expectedPriority}, Actual: ${actualPriority}`,
+            data: { match: true, actualPriority },
+          };
+        }
+        return {
+          success: false,
+          message: `Priority mismatch for ${params.element.id}. Expected: ${expectedPriority}, Actual: ${actualPriority}`,
+          data: { match: false, actualPriority },
+        };
+      },
+    },
+    // Example of overriding a core command (optional, for testing)
+    // {
+    //   commandName: "click",
+    //   overrideCoreBehavior: true,
+    //   handler: async (params: CustomActionHandlerParams): Promise<ActionResult> => {
+    //     console.log(`[Custom Override Handler] Intercepted CLICK on element: ${params.element.id}`);
+    //     // You can add custom logic before or after calling the original action
+    //     const result = await params.automation.click(params.element.id);
+    //     console.log(`[Custom Override Handler] Original click action result:`, result);
+    //     // You can modify the result if needed
+    //     if (result.success) {
+    //       result.message = "Clicked via custom override! " + result.message;
+    //     }
+    //     return result;
+    //   }
+    // }
+  ];
+
   const options: McpServerOptions = {
     targetUrl: process.env.MCP_TARGET_URL || "http://localhost:5173", // Your frontend URL
     port: Number(process.env.MCP_PORT) || 8070, // Different port from react-cli-mcp default if run simultaneously
     headlessBrowser: process.env.MCP_HEADLESS_BROWSER
       ? process.env.MCP_HEADLESS_BROWSER === "true"
       : false, // Default to headed for easier debugging initially
-    serverName: "MCP External Server Example",
-    serverVersion: "1.0.0",
+    serverName: "MCP External Server Example with Custom Handlers",
+    serverVersion: "1.0.1",
     serverInstructions:
-      "This is an MCP server running externally, powered by react-cli-mcp.",
+      "This server includes custom commands: get-custom-note #id, check-priority #id <priority>",
     customAttributeReaders: sampleCustomReaders,
+    customActionHandlers: customHandlers,
     // Example of how a user might provide a custom authentication function:
     authenticateClient: async (context: ClientAuthContext) => {
       console.log("[External Server] Auth attempt. Headers:", context.headers);
