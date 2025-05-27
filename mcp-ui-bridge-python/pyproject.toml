@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-ui-bridge-python"
+version = "0.1.0"
+description = "A Python tool to bridge LLMs with web UIs via MCP."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT License"}
+authors = [
+  {name = "Your Name", email = "your.email@example.com"},
+]
+keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "playwright~=1.40",  # Using a recent version, can be updated
+    "fastmcp~=2.5",    # Assuming a version, replace with actual if known
+    "pydantic~=2.0",
+    "typer~=0.9",
+    "rich>=13.0.0", # Explicitly add rich
+]
+
+[project.urls]
+"Homepage" = "https://github.com/your-username/mcp-ui-bridge-python" # Placeholder
+"Bug Tracker" = "https://github.com/your-username/mcp-ui-bridge-python/issues" # Placeholder
+
+[project.scripts]
+# mcp-ui-bridge = "mcp_ui_bridge_python.main:app" # Example if using Typer and main:app 

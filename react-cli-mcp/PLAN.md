@@ -208,7 +208,7 @@ The `DomParser` currently:
     - [x] Added `README.md` (for npm) and `LICENSE` file to `react-cli-mcp`.
     - [x] **Successfully published `mcp-ui-bridge@0.1.0` to npm.**
     - [x] **Tested by updating `mcp-external-server` to use the npm package, confirming functionality.**
-  - [ ] **Task 3.5.3**: Improve documentation for tool usage and `data-mcp-*` attribute specification.
+  - [x] **Task 3.5.3**: Improve documentation for tool usage and `data-mcp-*` attribute specification.
     - [x] Updated main `README.md` with detailed usage, `data-mcp-*` attributes, and `mcp-external-server` instructions.
     - [x] Updated `react-cli-mcp/README.md` (for npm) with comprehensive library usage details.
 
@@ -258,8 +258,8 @@ The `DomParser` currently:
     - **Task 3.6.1.4**: Update `mcp_server.ts`
       - [x] Pass `options.customAttributeReaders` from `McpServerOptions` to `DomParser` and `PlaywrightController` constructors.
     - **Task 3.6.1.5**: Documentation
-      - [ ] Update `README.md` to explain how to use `customAttributeReaders` in `McpServerOptions`.
-      - [ ] Provide examples of custom attribute definitions and their usage in the frontend.
+      - [x] Update `README.md` to explain how to use `customAttributeReaders` in `McpServerOptions`.
+      - [x] Provide examples of custom attribute definitions and their usage in the frontend.
 
   - **Sub-Phase 3.6.2: Custom Action Handlers**
 
@@ -293,45 +293,8 @@ The `DomParser` currently:
           - [x] Else (unknown command):
             - [x] Return "Unknown command" `ActionResult`.
       - **Task 3.6.2.4**: Documentation
-        - [ ] Update `README.md` to explain how to define and use `customActionHandlers`.
-        - [ ] Provide examples of custom handlers for new commands and overriding existing ones.
+        - [x] Update `README.md` to explain how to define and use `customActionHandlers`.
+        - [x] Provide examples of custom handlers for new commands and overriding existing ones.
 
   - **Sub-Phase 3.6.3: Advanced Parser Customization (Future Consideration)**
     - **Goal**: Allow users to inject custom logic directly into the DOM parsing process.
-
-## 8. Key Challenges & Risks
-
-(Content from original plan remains relevant)
-
-## 9. Open Questions
-
-(Content from original plan remains relevant)
-
----
-
-## 10. Recent Progress & Next Steps (As of 2024-05-17)
-
-**Recently Completed (Updated on 2024-05-21):**
-
-- **Functional MCP Server Implementation (`Phase 3.3`):**
-
-  - Successfully refactored `src/mcp_server.ts` to be a fully functional MCP server using `FastMCP` (TypeScript version).
-  - Integrated `PlaywrightController` to manage browser instances and interactions.
-  - Integrated `DomParser` to analyze the live DOM of the target web application based on `data-mcp-*` attributes.
-  - The `get_current_screen_data` tool now correctly fetches and returns structured data and interactive elements from the live web page.
-  - The `get_current_screen_actions` tool now correctly derives actionable commands and hints from the interactive elements.
-  - The `get_page_screenshot` tool was implemented to capture page screenshots as base64 strings, but it is currently not exposed via the MCP server as the LLM cannot directly interpret images. The code for this tool remains available.
-  - The `send_command` tool can now parse `click #id` and `type #id "text"` commands, execute them using `PlaywrightController`, and return the action's outcome.
-  - The server correctly launches Playwright, navigates to the target URL (configurable via `MCP_TARGET_URL` or `McpServerOptions`), and handles basic interactions.
-  - Tested end-to-end flow: MCP client calls tools -> MCP server interacts with web app via Playwright -> web app state changes -> MCP server reports new state.
-  - **Type Definition Consolidation:** Moved all type definitions from `src/core/types.ts` to `src/types/index.ts` and updated all import paths. Deleted `src/core/types.ts`.
-  - **Verified MCP Tool Functionality:** Confirmed `get_current_screen_data`, `get_current_screen_actions`, and `send_command` (click, type) are working correctly after type refactoring and before library packaging. Successfully deleted all existing todos and added a new one.
-
-- **Library Packaging & Local Testing (`Phase 3.5` initiated):**
-  - **`tsconfig.json` Updates (`Task 3.4.3`):** Added `declaration: true`, `declarationMap: true`, `sourceMap: true` to enable generation of type definition files for library consumers.
-  - **`package.json` Updates (`Task 3.4.2`):**
-    - Set `name` to `react-cli-mcp`.
-    - Set `main` to `dist/mcp_server.js` and `types` to `dist/mcp_server.d.ts`.
-    - Added `files` array to include `dist`, `README.md`, and `LICENSE`.
-    - Added `keywords`, `author`, and `description`.
-    - Updated `build`
