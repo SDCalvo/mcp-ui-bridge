@@ -1,4 +1,3 @@
-print("--- DIAGNOSTIC: Top of mcp-external-server-python/src/main.py ---")
 import asyncio
 import json
 import logging
@@ -7,6 +6,7 @@ import signal
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 import traceback
+# import uvicorn # No longer directly using uvicorn to run the app
 
 # Adjusted FastMCP imports
 from fastmcp import (
@@ -52,7 +52,7 @@ playwright_controller: Optional[PlaywrightController] = None
 dom_parser: Optional[DomParser] = None
 automation_interface: Optional[AsyncAutomationInterfaceImpl] = None
 custom_action_handler_map: Dict[str, CustomActionHandler] = {}
-mcp_server_instance: Optional[FastMCP] = None
+mcp_server_instance: Optional[FastMCP] = None # Will be initialized in run_mcp_server
 
 async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tuple[Optional[PlaywrightController], Optional[DomParser], Optional[AsyncAutomationInterfaceImpl]]:
     """
@@ -164,9 +164,16 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
     logger.info("[mcp_server.py] All components initialized successfully")
     return playwright_controller, dom_parser, automation_interface
 
-# --- Tool Execution Logic --- 
+# --- Tool Execution Logic (will be decorated AFTER mcp_server_instance is created) --- 
 
-async def get_current_screen_data_execute() -> str:
+# Placeholder for tool definitions until mcp_server_instance is available
+# These will be decorated later in run_mcp_server or defined globally if mcp_server_instance is global from start
+
+async def _ping_tool_execute_impl() -> Dict[str, Any]:
+    logger.info("[mcp_server.py] ping_tool_execute called")
+    return {"success": True, "message": "pong"}
+
+async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
     """Core logic for the get_current_screen_data tool."""
     global dom_parser, playwright_controller
 
@@ -174,31 +181,29 @@ async def get_current_screen_data_execute() -> str:
         logger.error(
             "[mcp_server.py] get_current_screen_data: DomParser or PlaywrightController not initialized."
         )
-        return json.dumps({
+        return {
             "success": False,
             "message": "Server components not initialized.",
-            "error_type": PlaywrightErrorType.NotInitialized.value # Use .value for enums in JSON
-        })
+            "error_type": PlaywrightErrorType.NotInitialized.value
+        }
     
     logger.info("[mcp_server.py] get_current_screen_data: Fetching data...")
     try:
         page = playwright_controller.get_page()
-        if not page or page.is_closed(): # Check if page is None as well
+        if not page or page.is_closed():
             logger.warning("[mcp_server.py] get_current_screen_data: Page is closed or not available.")
-            return json.dumps({
+            return {
                 "success": False,
                 "message": "Page is closed or not available. Cannot retrieve screen data.",
                 "error_type": PlaywrightErrorType.PageNotAvailable.value
-            })
+            }
 
-        # These are synchronous calls from DomParser
-        # Consider asyncio.to_thread if these are blocking in an async context
-        structured_data_result = await asyncio.to_thread(dom_parser.get_structured_data)
-        interactive_elements_result = await asyncio.to_thread(dom_parser.get_interactive_elements_with_state)
+        # Direct synchronous calls
+        structured_data_result = await dom_parser.get_structured_data()
+        interactive_elements_result = await dom_parser.get_interactive_elements_with_state()
         
-        current_url = page.url
+        current_url = await page.evaluate("() => window.location.href")
 
-        # Ensure data fields are present with empty defaults if parsing failed or returned no data
         structured_data_payload = {
             "containers": [], "regions": [], "status_messages": [], "loading_indicators": []
         }
@@ -208,9 +213,8 @@ async def get_current_screen_data_execute() -> str:
         interactive_elements_payload = []
         if interactive_elements_result.success and interactive_elements_result.data:
             interactive_elements_payload = [el.model_dump(by_alias=True) for el in interactive_elements_result.data]
-            # Use model_dump for Pydantic models to get dicts suitable for JSON
 
-        return json.dumps({
+        return {
             "success": True,
             "current_url": current_url,
             "data": {
@@ -221,16 +225,16 @@ async def get_current_screen_data_execute() -> str:
                 "structured": structured_data_result.message,
                 "interactive": interactive_elements_result.message,
             },
-        })
+        }
     except Exception as error:
         logger.exception("[mcp_server.py] Error in get_current_screen_data_execute:")
-        return json.dumps({
+        return {
             "success": False,
             "message": f"Error fetching screen data: {str(error)}",
             "error_type": PlaywrightErrorType.ActionFailed.value
-        })
+        }
 
-async def get_current_screen_actions_execute() -> str:
+async def _get_current_screen_actions_execute_impl() -> Dict[str, Any]:
     """Core logic for the get_current_screen_actions tool."""
     global dom_parser, playwright_controller
 
@@ -238,38 +242,38 @@ async def get_current_screen_actions_execute() -> str:
         logger.error(
             "[mcp_server.py] get_current_screen_actions: DomParser or PlaywrightController not initialized."
         )
-        return json.dumps({
+        return {
             "success": False,
             "message": "Server components not initialized.",
             "actions": [],
             "error_type": PlaywrightErrorType.NotInitialized.value
-        })
+        }
 
     logger.info("[mcp_server.py] get_current_screen_actions: Fetching actions...")
     
     page = playwright_controller.get_page()
     if not page or page.is_closed():
         logger.warning("[mcp_server.py] get_current_screen_actions: Page is closed or not available.")
-        return json.dumps({
+        return {
             "success": False,
             "message": "Page is closed. Cannot retrieve screen actions.",
             "error_type": PlaywrightErrorType.PageNotAvailable.value,
             "actions": []
-        })
+        }
 
     try:
-        # Call the synchronous method in a separate thread
-        interactive_elements_result = await asyncio.to_thread(dom_parser.get_interactive_elements_with_state)
+        # Direct synchronous call
+        interactive_elements_result = await dom_parser.get_interactive_elements_with_state()
 
         if not interactive_elements_result.success or not interactive_elements_result.data:
-            return json.dumps({
+            return {
                 "success": False,
                 "message": f"Failed to get interactive elements: {interactive_elements_result.message}",
                 "actions": [],
                 "error_type": (interactive_elements_result.error_type.value 
                                if interactive_elements_result.error_type 
                                else PlaywrightErrorType.ActionFailed.value)
-            })
+            }
 
         actions = []
         for el_info_model in interactive_elements_result.data:
@@ -367,18 +371,18 @@ async def get_current_screen_actions_execute() -> str:
                 })
             actions.extend(generated_actions)
         
-        return json.dumps({"success": True, "actions": actions})
+        return {"success": True, "actions": actions}
 
     except Exception as error:
         logger.exception("[mcp_server.py] Error in get_current_screen_actions_execute:")
-        return json.dumps({
+        return {
             "success": False,
             "message": f"Error fetching screen actions: {str(error)}",
             "actions": [],
             "error_type": PlaywrightErrorType.ActionFailed.value
-        })
+        }
 
-async def send_command_tool_execute(params: SendCommandParams) -> str:
+async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Context) -> Dict[str, Any]:
     """Core logic for the send_command tool."""
     global playwright_controller, automation_interface, custom_action_handler_map
 
@@ -386,25 +390,25 @@ async def send_command_tool_execute(params: SendCommandParams) -> str:
         logger.error(
             "[mcp_server.py] send_command: PlaywrightController or AutomationInterface not initialized."
         )
-        return json.dumps({
+        return {
             "success": False,
             "message": "Server components not initialized.",
             "error_type": PlaywrightErrorType.NotInitialized.value
-        })
+        }
 
     command_string = params.command_string.strip()
     logger.info(f"[mcp_server.py] Received command: {command_string}")
+    await ctx.info(f"Executing command: {command_string}") # Example of using context
 
-    # --- Command Parsing (adapted from TS version) ---
     import re
     match = re.match(r"(\S+)(?:\s+#([^\s]+))?(.*)", command_string)
     if not match:
         logger.warning("[mcp_server.py] Unrecognized command format.")
-        return json.dumps({
+        return {
             "success": False,
             "message": "Invalid command string format.",
             "error_type": PlaywrightErrorType.InvalidInput.value
-        })
+        }
 
     command_name = match.group(1).lower()
     element_id = match.group(2)  # Can be None
@@ -435,43 +439,39 @@ async def send_command_tool_execute(params: SendCommandParams) -> str:
 
         target_element_info: Optional[InteractiveElementInfo] = None
         if element_id:
-            # get_element_state is sync, run in thread
-            state_result = await asyncio.to_thread(playwright_controller.get_element_state, element_id)
+            # Direct synchronous call
+            state_result = await playwright_controller.get_element_state(element_id)
             if not state_result.success or not state_result.data:
                 logger.warning(f"[mcp_server.py] Failed to get state for element #{element_id} for custom handler: {state_result.message}")
-                return json.dumps({
+                return {
                     "success": False,
                     "message": f"Failed to get element state for #{element_id}: {state_result.message}",
                     "error_type": (state_result.error_type.value if state_result.error_type 
                                    else PlaywrightErrorType.ElementNotFound.value)
-                })
-            # Ensure state_result.data is InteractiveElementInfo. It should be if PlaywrightController is correct.
+                }
             if isinstance(state_result.data, InteractiveElementInfo):
                 target_element_info = state_result.data
             else:
                  logger.error(f"[mcp_server.py] Element state for {element_id} is not of type InteractiveElementInfo.")
-                 # This case needs to be handled, maybe return error or proceed with None target_element_info
 
         try:
-            # Prepare params for custom handler
-            # The CustomActionHandler model defines handler as Callable[[CustomActionHandlerParams], Awaitable[ActionResult]]
-            # Our automation_interface is AutomationInterfaceImpl (sync). If handler expects async interface, this mismatch needs resolution.
-            # For now, passing the sync interface. The handler must be designed to work with it or use to_thread internally.
             handler_params = CustomActionHandlerParams(
                 element=target_element_info, 
                 command_args=command_args, 
                 automation=automation_interface # This is AutomationInterfaceImpl (Sync)
             )
+            # The type hint for CustomActionHandler.handler is Callable[[CustomActionHandlerParams], Awaitable[ActionResult]]
+            # so it must be awaited.
             result = await custom_handler.handler(handler_params)
             logger.info(f"[mcp_server.py] Custom handler for \"{command_name}\" executed.")
-            return json.dumps(result.model_dump(by_alias=True))
+            return result.model_dump(by_alias=True)
         except Exception as e:
             logger.exception(f"[mcp_server.py] Error in custom handler for \"{command_name}\":")
-            return json.dumps({
+            return {
                 "success": False,
                 "message": f"Error executing custom handler for \"{command_name}\": {str(e)}",
                 "error_type": PlaywrightErrorType.ActionFailed.value
-            })
+            }
     elif (
         command_name in ["click", "type", "select", "check", "uncheck", "choose"] and 
         command_name in custom_action_handler_map and 
@@ -482,34 +482,34 @@ async def send_command_tool_execute(params: SendCommandParams) -> str:
     # --- Core Command Logic (if no custom handler or not overridden) ---
     if not element_id and command_name in ["click", "type", "select", "check", "uncheck", "choose"]:
         logger.warning(f"[mcp_server.py] Core command \"{command_name}\" requires an element ID (#elementId) but none was provided.")
-        return json.dumps({
+        return {
             "success": False, 
             "message": f"Core command \"{command_name}\" requires an element ID.", 
             "error_type": PlaywrightErrorType.InvalidInput.value
-        })
+        }
 
-    # All PlaywrightController methods are synchronous. Wrap them in asyncio.to_thread.
+    # Direct synchronous calls
     if command_name == "click" and element_id:
         logger.info(f"[mcp_server.py] Executing core click on #{element_id}")
-        result = await asyncio.to_thread(playwright_controller.click, element_id)
+        result = await playwright_controller.click(element_id)
     elif command_name == "type" and element_id and command_args:
         text_to_type = command_args[0]
         logger.info(f"[mcp_server.py] Executing core type \"{text_to_type}\" into #{element_id}")
-        result = await asyncio.to_thread(playwright_controller.type_text, element_id, text_to_type)
+        result = await playwright_controller.type_text(element_id, text_to_type)
     elif command_name == "select" and element_id and command_args:
         value_to_select = command_args[0]
         logger.info(f"[mcp_server.py] Executing core select \"{value_to_select}\" for #{element_id}")
-        result = await asyncio.to_thread(playwright_controller.select_option, element_id, value_to_select)
+        result = await playwright_controller.select_option(element_id, value_to_select)
     elif command_name == "check" and element_id:
         logger.info(f"[mcp_server.py] Executing core check on #{element_id}")
-        result = await asyncio.to_thread(playwright_controller.check_element, element_id)
+        result = await playwright_controller.check_element(element_id)
     elif command_name == "uncheck" and element_id:
         logger.info(f"[mcp_server.py] Executing core uncheck on #{element_id}")
-        result = await asyncio.to_thread(playwright_controller.uncheck_element, element_id)
-    elif command_name == "choose" and element_id: # choose is for radio buttons
+        result = await playwright_controller.uncheck_element(element_id)
+    elif command_name == "choose" and element_id: 
         value_to_select = command_args[0] if command_args else element_id
         logger.info(f"[mcp_server.py] Executing core choose on #{element_id} with value \"{value_to_select}\"")
-        result = await asyncio.to_thread(playwright_controller.select_radio_button, element_id, value_to_select)
+        result = await playwright_controller.select_radio_button(element_id, value_to_select)
     elif not custom_action_handler_map.get(command_name): # Only if no custom handler was defined AT ALL
         logger.warning(f"[mcp_server.py] Unrecognized command: {command_name}")
         result = ActionResult(
@@ -525,7 +525,7 @@ async def send_command_tool_execute(params: SendCommandParams) -> str:
             error_type=PlaywrightErrorType.InvalidInput
         )
 
-    return json.dumps(result.model_dump(by_alias=True))
+    return result.model_dump(by_alias=True) # Return dict directly
 
 # --- Server Setup and Lifecycle ---
 
@@ -534,47 +534,13 @@ async def run_mcp_server(options: McpServerOptions) -> None:
     Initializes and starts the FastMCP server with all defined tools.
     Handles graceful shutdown on SIGINT/SIGTERM.
     """
-    global mcp_server_instance, playwright_controller, dom_parser, automation_interface # Added dom_parser and automation_interface
+    global mcp_server_instance, playwright_controller, dom_parser, automation_interface
 
     if not options:
         logger.error("[mcp_server.py] McpServerOptions are required to run the server.")
         raise ValueError("McpServerOptions are required.")
 
-    # Initialize components and assign to global variables
-    # The initialize_browser_and_dependencies function now handles global assignment internally
-    init_pw, init_dp, init_ai = await initialize_browser_and_dependencies(options)
-
-    if not init_pw or not init_dp or not init_ai:
-        # The error is already logged by initialize_browser_and_dependencies
-        # We use the print statement here for the specific diagnostic requested by the user.
-        # print(f"!!! SIMPLE PRINT FROM RUN_MCP_SERVER EXCEPTION HANDLER. ERROR: Initialization failed !!!")
-        # traceback.print_exc() # This would print the traceback of *this* scope, which isn't where the original error happened.
-        logger.critical("[mcp_server.py] Critical error during initialization. initialize_browser_and_dependencies failed. Server cannot start.")
-        return 
-    
-    # At this point, playwright_controller, dom_parser, and automation_interface globals should be set.
-
-    tools = [
-        {
-            "name": "get_current_screen_data",
-            "description": "Retrieves structured data and interactive elements from the current web page view.",
-            "input_schema": None,  # No input parameters for this tool
-            "execute": get_current_screen_data_execute # Async function
-        },
-        {
-            "name": "get_current_screen_actions",
-            "description": "Retrieves a list of possible actions (like click, type) for interactive elements on the current screen.",
-            "input_schema": None,  # No input parameters for this tool
-            "execute": get_current_screen_actions_execute # Async function
-        },
-        {
-            "name": "send_command",
-            "description": "Sends a command to interact with the web page (e.g., click button, type text). Command format: \"action #elementId arguments...\".",
-            "input_schema": SendCommandParams, # Pydantic model for input validation
-            "execute": send_command_tool_execute # Async function
-        },
-    ]
-
+    # Initialize FastMCP instance first
     auth_callback: Optional[Callable[[ClientAuthContext], Awaitable[bool]]] = None
     if options.authenticate_client:
         auth_callback = options.authenticate_client
@@ -582,87 +548,109 @@ async def run_mcp_server(options: McpServerOptions) -> None:
     else:
         logger.info("[mcp_server.py] No client authentication callback configured. Server will be open.")
 
-    host = options.host # host already uses Pydantic default if not set
-    port = options.port # port already uses Pydantic default if not set
-
-    logger.info(f"[mcp_server.py] Initializing FastMCP server at {host}:{port}...")
-    
     try:
         mcp_server_instance = FastMCP(
-            host=host,
-            port=port,
             title=options.server_name,
             description=options.server_instructions,
-            version=options.server_version, 
-            tools=tools,
-            authenticate_client=auth_callback,
+            version=options.server_version,
+            # tools list is removed, tools will be discovered via decorators later
+            authenticate_client=auth_callback
         )
-        logger.info("[mcp_server.py] FastMCP server instance created.")
+        logger.info("[mcp_server.py] FastMCP server instance successfully created (pre-tool/browser initialization).")
     except Exception as e:
         logger.exception("[mcp_server.py] Failed to create FastMCP server instance")
-        if playwright_controller:
-            try:
-                playwright_controller.close()
-            except Exception as pc_close_err:
-                logger.exception("[mcp_server.py] Error closing PlaywrightController during FastMCP creation failure")
         return
 
-    logger.info("[mcp_server.py] Starting FastMCP server. Press Ctrl+C to stop.")
+    # Now initialize browser and other dependencies
+    init_pw, init_dp, init_ai = await initialize_browser_and_dependencies(options)
+
+    if not init_pw or not init_dp or not init_ai:
+        logger.critical("[mcp_server.py] Critical error during browser/dependencies initialization. Server cannot start.")
+        return
+
+    # Tool definitions using decorators
+    if not mcp_server_instance:
+        logger.error("[mcp_server.py] mcp_server_instance is None before tool decoration. This is a bug.")
+        return # Cannot proceed to decorate tools
+
+    @mcp_server_instance.tool(name="ping", description="A simple ping tool to check server responsiveness.")
+    async def ping_tool_execute() -> Dict[str, Any]:
+        return await _ping_tool_execute_impl()
+
+    @mcp_server_instance.tool(name="get_current_screen_data", description="Retrieves structured data and interactive elements from the current web page view.")
+    async def get_current_screen_data_execute() -> Dict[str, Any]:
+        return await _get_current_screen_data_execute_impl()
+
+    @mcp_server_instance.tool(name="get_current_screen_actions", description="Retrieves a list of possible actions (like click, type) for interactive elements on the current screen.")
+    async def get_current_screen_actions_execute() -> Dict[str, Any]:
+        return await _get_current_screen_actions_execute_impl()
+
+    @mcp_server_instance.tool(name="send_command", description='Sends a command to interact with the web page (e.g., click button, type text). Command format: "action #elementId arguments..."')
+    async def send_command_tool_execute(params: SendCommandParams, ctx: Context) -> Dict[str, Any]:
+        return await _send_command_tool_execute_impl(params, ctx)
+
+    logger.info("[mcp_server.py] Tools defined and decorated for FastMCP.")
+
+    host = options.host
+    port = options.port
+    
+    # The old 'tools' list definition is removed.
+    # Manual Uvicorn setup (uvicorn.Config, uvicorn.Server, uv_server.serve()) is removed.
+    # The call to mcp_server_instance.run_async() will be added in a later step.
+
+    # For now, ensure signal handlers are still managed correctly if run_async is not yet called
+    # This finally block might be premature without the main server loop,
+    # but let's keep the structure for graceful_shutdown.
+    original_sigint_handler = signal.getsignal(signal.SIGINT)
+    original_sigterm_handler = signal.getsignal(signal.SIGTERM)
 
     try:
-        # Run FastMCP server in a separate thread to avoid event loop conflicts,
-        # and specify streamable-http transport with the /sse endpoint.
-        http_stream_options = {"endpoint": "/sse"} 
-        await asyncio.to_thread(mcp_server_instance.run, transport="streamable-http", transport_options=http_stream_options)
-    except KeyboardInterrupt:
-        logger.info("[mcp_server.py] KeyboardInterrupt received in run_mcp_server. Initiating shutdown...")
-        await graceful_shutdown() # Call graceful_shutdown here
+        # In the next steps, we will add tool definitions and the mcp_server_instance.run_async() call here.
+        logger.info(f"[mcp_server.py] Starting FastMCP server with run_async() on {host}:{port}, path /sse")
+        if not mcp_server_instance: # Should be created above
+             logger.error("[mcp_server.py] mcp_server_instance is None before run_async. FATAL.")
+             if playwright_controller: await playwright_controller.close() # Best effort
+             return
+
+        await mcp_server_instance.run_async(
+            transport="sse", 
+            host=host, 
+            port=port, 
+            path="/sse" # Explicit path matching minimal example
+        )
+        logger.info("[mcp_server.py] mcp_server_instance.run_async() completed or was interrupted.")
+
+    except KeyboardInterrupt: 
+        logger.info("[mcp_server.py] run_async() caught KeyboardInterrupt. Server shutting down.")
+    except asyncio.CancelledError:
+        logger.info("[mcp_server.py] mcp_server_instance.run_async() task was cancelled.")
     except Exception as e:
-        logger.error(f"[mcp_server.py] FastMCP server exited with error: {e}")
+        logger.error(f"[mcp_server.py] mcp_server_instance.run_async() exited with error: {e}", exc_info=True)
     finally:
-        logger.info("[mcp_server.py] FastMCP server has stopped.")
-        # Ensure graceful_shutdown is called if not already by signals (e.g., if run() completes normally)
-        # However, signal handlers should manage this. If it's a direct error from run(), 
-        # we might need to manually trigger parts of graceful_shutdown here, specifically browser closing.
-        if playwright_controller and playwright_controller.get_page() and not playwright_controller.get_page().is_closed():
-            logger.info("[mcp_server.py] Ensuring Playwright is closed post-server stop.")
-            try:
-                playwright_controller.close() # This is synchronous
-            except Exception as e_close:
-                logger.error(f"[mcp_server.py] Error closing playwright_controller in finally block: {e_close}")
+        logger.info("[mcp_server.py] mcp_server_instance.run_async() has finished or was interrupted. Performing graceful shutdown.")
+        signal.signal(signal.SIGINT, original_sigint_handler)
+        signal.signal(signal.SIGTERM, original_sigterm_handler)
+        
+        await graceful_shutdown() 
 
 async def graceful_shutdown(sig: Optional[signal.Signals] = None) -> None:
-    """Handles graceful shutdown of the server and Playwright resources."""
-    global mcp_server_instance, playwright_controller 
+    """Handles graceful shutdown of Playwright resources."""
+    global playwright_controller # mcp_server_instance shutdown is handled by Uvicorn loop
 
-    if sig:
-        logger.info(f"[mcp_server.py] Received signal {sig.name}. Initiating graceful shutdown...")
+    if sig: # This function might be called directly from run_mcp_server's finally too
+        logger.info(f"[mcp_server.py] Graceful shutdown triggered by signal {sig.name} (via Uvicorn).")
     else:
-        logger.info("[mcp_server.py] Initiating graceful shutdown...")
+        logger.info("[mcp_server.py] Graceful shutdown triggered post-Uvicorn stop.")
 
-    # 1. Stop the FastMCP server - We are now assuming FastMCP's run() method
-    #    handles its own shutdown upon receiving the termination signal (e.g., SIGINT, SIGTERM)
-    #    that also triggers this graceful_shutdown handler. So, no explicit mcp_server_instance.stop() call.
-    logger.info("[mcp_server.py] FastMCP server shutdown is expected to be handled internally by FastMCP upon receiving signal.")
-
-    # 2. Close Playwright resources
     if playwright_controller:
         logger.info("[mcp_server.py] Closing Playwright resources...")
         try:
-            # playwright_controller.close() is synchronous
-            # If graceful_shutdown is called from an event loop handler, 
-            # running sync blocking code directly can be an issue.
-            # However, typically signal handlers might run it in a way that's okay,
-            # or it's the last thing happening.
-            # For simplicity now, direct call. Consider to_thread if issues arise.
-            await asyncio.to_thread(playwright_controller.close)
+            await playwright_controller.close()
             logger.info("[mcp_server.py] Playwright resources closed.")
         except Exception as e:
-            logger.error(f"[mcp_server.py] Error closing PlaywrightController: {e}")
+            logger.error(f"[mcp_server.py] Error closing PlaywrightController: {e}", exc_info=True)
     
     logger.info("[mcp_server.py] Graceful shutdown sequence complete.")
-    # Optionally, force exit if process hangs, though ideally not needed.
-    # sys.exit(0)
 
 # --- Main Entry Point ---
 
@@ -736,10 +724,25 @@ if __name__ == "__main__":
     try:
         asyncio.run(main(config_path=config_file_path))
     except KeyboardInterrupt:
-        logger.info("[mcp_server.py] Main process interrupted. Exiting.")
-    except Exception as e:
-        logger.exception("[mcp_server.py] Unhandled exception in main")
-        if playwright_controller:
+        logger.info("[mcp_server.py] Main process interrupted (asyncio.run). This should ideally be handled by Uvicorn's shutdown or our graceful_shutdown.")
+        # If playwright_controller is still alive, attempt a last-ditch close.
+        # This path is less ideal as graceful_shutdown should have been called.
+        if playwright_controller and playwright_controller.get_page() and not playwright_controller.get_page().is_closed():
+            logger.warning("[mcp_server.py] Attempting emergency Playwright close from main KeyboardInterrupt.")
             try:
-                playwright_controller.close()
-            except: pass
+                # This is tricky because the loop from asyncio.run() is stopping.
+                # A direct await might not work.
+                # For simplicity, relying on the finally block in run_mcp_server.
+                pass 
+            except Exception as e_final_close:
+                logger.error(f"[mcp_server.py] Error in emergency Playwright close: {e_final_close}")
+
+    except Exception as e:
+        logger.exception("[mcp_server.py] Unhandled exception in main top-level asyncio.run")
+        # Similar emergency close attempt
+        if playwright_controller and playwright_controller.get_page() and not playwright_controller.get_page().is_closed():
+            logger.warning("[mcp_server.py] Attempting emergency Playwright close from main unhandled exception.")
+            # Relying on finally in run_mcp_server for cleanup.
+            pass
+
+    logger.info("[mcp_server.py] Application exiting.")
