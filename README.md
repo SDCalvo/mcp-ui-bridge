@@ -5,6 +5,8 @@
 
 **`mcp-ui-bridge` is a project dedicated to making web applications natively and equally accessible to both human users and Large Language Models (LLMs) through a single, unified development effort.**
 
+**Available in both TypeScript/Node.js and Python implementations** for maximum flexibility and integration with your existing tech stack.
+
 It embodies the concept of **LLM-Oriented Accessibility**: a new paradigm for web interaction. Instead of forcing LLMs to interpret visual UIs (often unreliably) or requiring developers to build separate, limited APIs for them, LLM-Oriented Accessibility focuses on providing LLMs with a structured, text-based, and semantically rich understanding of a web application. This is achieved by instrumenting the web application with `data-mcp-*` attributes that the `mcp-ui-bridge` tool can then parse and expose via a Model Context Protocol (MCP) server.
 
 The core philosophy is **"Code Once, Serve All."** Developers build their rich visual UI for humans as they normally would, and by adding these semantic attributes, the _same_ application becomes fully understandable and operable by LLMs. This approach respects the strengths of both humans (visual intuition) and LLMs (text processing, automation) by providing each with an interface optimized for their needs, all stemming from a single source of truth: your application code.
@@ -18,15 +20,29 @@ Adopting this approach offers several powerful advantages:
 - **Empowering LLMs as Advanced Testers:** By providing a clear, structured view of the application state and available actions, `mcp-ui-bridge` inherently enables sophisticated automated testing by LLMs. An LLM can programmatically navigate, interact with elements, input data, and verify outcomes based on the semantic information provided, going far beyond traditional brittle UI automation scripts.
 - **Enabling LLM-Assisted Development Workflows:** Imagine an LLM in your IDE (like Cursor or a similar AI-powered coding assistant). With `mcp-ui-bridge`, this LLM can not only help you _write_ code for a new feature but can then immediately _interact_ with that feature on the live development server using the exposed MCP tools. It can perform test actions, report back on the UI state, and help you debug in a tight, iterative loop, significantly accelerating development and improving quality.
 - **Enhanced LLM Reliability:** By interacting with a structured, text-based representation, LLMs avoid the pitfalls of visual interpretation (misreading text, misinterpreting icons, errors with coordinates), leading to more reliable and predictable interactions.
+- **Language Flexibility:** Choose the implementation that best fits your infrastructure - TypeScript/Node.js for JavaScript-heavy environments or Python for data science, AI/ML, and automation workflows.
 
 ## Repository Structure
 
-This repository contains the `mcp-ui-bridge` tool and a sample application to demonstrate its capabilities:
+This repository contains implementations of the `mcp-ui-bridge` tool in both TypeScript and Python, along with sample applications to demonstrate their capabilities:
+
+**Core Libraries:**
+
+- **`/react-cli-mcp`**: The original TypeScript/Node.js implementation of `mcp-ui-bridge`
+  - **Note on Naming**: While the project is now called `mcp-ui-bridge` (as it's framework-agnostic), this directory retains its original name `react-cli-mcp` to avoid potential issues with GitHub repository history and continuity. The tool within this folder is the `mcp-ui-bridge`.
+- **`/mcp-ui-bridge-python`**: The Python implementation of `mcp-ui-bridge` with full feature parity
+
+**Sample Applications:**
 
 - **`/frontend`**: Contains a sample TodoMVC web application. This is the application that `mcp-ui-bridge` will interact with.
 - **`/backend`**: Contains a simple mock backend server that the TodoMVC `frontend` application uses for its data persistence (if applicable to your frontend's setup).
-- **`/react-cli-mcp`**: This is the core `mcp-ui-bridge` tool itself.
-  - **Note on Naming**: While the project is now called `mcp-ui-bridge` (as it's framework-agnostic), this directory retains its original name `react-cli-mcp` to avoid potential issues with GitHub repository history and continuity. The tool within this folder is the `mcp-ui-bridge`.
+
+**Example Servers:**
+
+- **`/mcp-external-server`**: Pre-configured TypeScript application that uses the `react-cli-mcp` library to connect to your frontend (recommended way to run the TypeScript bridge)
+- **`/mcp-external-server-python`**: Pre-configured Python application that uses the `mcp-ui-bridge-python` library (recommended way to run the Python bridge)
+
+Both implementations provide identical functionality and MCP tool interfaces, so you can choose based on your preferred language and existing infrastructure.
 
 ## How It Works: A High-Level View
 
@@ -283,7 +299,38 @@ Example: `MCP_TARGET_URL=http://localhost:5173 npm run dev`
 
 The `mcp-external-server` also includes a toy authentication mechanism in its `src/index.ts` (the `MANUALLY_ALLOW_CONNECTION` variable) for testing purposes.
 
-### 5. Using `mcp-ui-bridge` with Cursor
+### 5. Alternative: Running the Python Version
+
+If you prefer Python, you can use the Python implementation instead:
+
+```bash
+# Navigate to the Python external server directory
+cd mcp-external-server-python
+
+# Create and activate a virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the Python MCP server
+python src/main.py
+```
+
+The Python server will start on `http://localhost:8080` by default.
+
+**Configuration for Python version:**
+
+The Python version can be configured using the same environment variables:
+
+- `MCP_TARGET_URL`: The URL of the web application (e.g., `http://localhost:5173`)
+- `MCP_PORT`: The port for the server to listen on (default: `8080`)
+- `MCP_HEADLESS_BROWSER`: Set to `"true"` for headless mode, `"false"` (default) to see the browser
+
+Example: `MCP_TARGET_URL=http://localhost:5173 python src/main.py`
+
+### 6. Using `mcp-ui-bridge` with Cursor
 
 To enable an LLM within Cursor (like the Cursor agent) to use the tools provided by `mcp-ui-bridge` and interact with your running web application, follow these steps:
 
@@ -334,9 +381,11 @@ This allows you to instruct Cursor to interact with your web application, test f
 
 ## Using `mcp-ui-bridge` as a Library
 
-The `mcp-ui-bridge` package is designed to be used as a library within your own Node.js projects, allowing you to create a custom MCP server that bridges your web application to LLMs.
+The `mcp-ui-bridge` package is designed to be used as a library within your own projects, allowing you to create a custom MCP server that bridges your web application to LLMs. Choose the implementation that best fits your tech stack:
 
-### Installation
+### TypeScript/Node.js Implementation
+
+#### Installation
 
 Once published to npm:
 
@@ -352,7 +401,7 @@ For local development or if using it directly from this monorepo structure into 
 }
 ```
 
-### Basic Usage
+#### Basic Usage
 
 Here's a minimal example of how to use `runMcpServer`:
 
@@ -401,21 +450,81 @@ async function startMyMcpBridge() {
 startMyMcpBridge();
 ```
 
-### Key `McpServerOptions`
+### Python Implementation
 
-- `targetUrl` (string, required): The URL of the web application the MCP server will control.
-- `port` (number, optional): Port for the MCP server. Defaults to `8080` if not set by `MCP_PORT` env var or this option.
-- `headlessBrowser` (boolean, optional): Whether to run Playwright in headless mode. Defaults to `false`.
-- `ssePath` (string, optional): The path for the Server-Sent Events (SSE) endpoint. Defaults to `/sse`.
-- `serverName` (string, optional): Name of your MCP server.
-- `serverVersion` (string, optional): Version of your MCP server.
-- `serverInstructions` (string, optional): Instructions for the LLM on how to use this server or the target application.
-- `authenticateClient` (function, optional): `async (context: ClientAuthContext) => Promise<boolean>`.
-  - `ClientAuthContext` provides `{ headers: Record<string, string | string[] | undefined>, sourceIp: string | undefined }`.
-  - Return `true` to allow the connection, `false` to deny (results in a 401 response).
-  - This allows you to implement custom logic, like API key validation, to secure your MCP server.
+#### Installation
 
-Using the library allows you to host this MCP bridge as part of a larger backend, deploy it as a standalone service, and integrate custom authentication seamlessly.
+For local development using the Python implementation:
+
+```bash
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install the Python mcp-ui-bridge library (adjust path as needed)
+pip install -e ./mcp-ui-bridge-python
+```
+
+#### Basic Usage
+
+Here's a minimal example using the Python implementation:
+
+```python
+# your_custom_mcp_server.py
+import asyncio
+import os
+from mcp_ui_bridge_python import run_mcp_server, McpServerOptions
+
+async def authenticate_client(source_ip: str, headers: dict) -> bool:
+    """Custom authentication logic"""
+    print(f"Authentication attempt from IP: {source_ip}")
+    api_key = headers.get("x-my-app-api-key")
+    if api_key and api_key == os.getenv("MY_EXPECTED_API_KEY"):
+        print("Client authenticated successfully.")
+        return True
+    print("Client authentication failed.")
+    return False
+
+async def start_my_mcp_bridge():
+    options = McpServerOptions(
+        target_url=os.getenv("MY_APP_URL", "http://localhost:3000"),
+        port=int(os.getenv("MY_MCP_BRIDGE_PORT", "8090")),
+        headless_browser=os.getenv("HEADLESS", "false").lower() != "false",
+        server_name="My Custom MCP Bridge",
+        server_version="1.0.0",
+        server_instructions="This bridge connects to My Awesome App.",
+        # Optional: Implement custom client authentication
+        authenticate_client=authenticate_client
+    )
+
+    try:
+        await run_mcp_server(options)
+        print(f"My Custom MCP Bridge started on port {options.port}, targeting {options.target_url}")
+    except Exception as error:
+        print(f"Failed to start My Custom MCP Bridge: {error}")
+        exit(1)
+
+if __name__ == "__main__":
+    asyncio.run(start_my_mcp_bridge())
+```
+
+### Key Configuration Options
+
+Both implementations support the same core options (with language-appropriate naming conventions):
+
+- `targetUrl`/`target_url` (string, required): The URL of the web application the MCP server will control.
+- `port` (number/int, optional): Port for the MCP server. Defaults to `8080` if not set by `MCP_PORT` env var or this option.
+- `headlessBrowser`/`headless_browser` (boolean, optional): Whether to run Playwright in headless mode. Defaults to `false`.
+- `ssePath`/`sse_path` (string, optional): The path for the Server-Sent Events (SSE) endpoint. Defaults to `/sse`.
+- `serverName`/`server_name` (string, optional): Name of your MCP server.
+- `serverVersion`/`server_version` (string, optional): Version of your MCP server.
+- `serverInstructions`/`server_instructions` (string, optional): Instructions for the LLM on how to use this server or the target application.
+- `authenticateClient`/`authenticate_client` (function, optional): Custom authentication function.
+  - TypeScript: `async (context: ClientAuthContext) => Promise<boolean>`
+  - Python: `async (source_ip: str, headers: dict) => bool`
+  - Return `true`/`True` to allow the connection, `false`/`False` to deny (results in a 401 response).
+
+Using either library allows you to host this MCP bridge as part of a larger backend, deploy it as a standalone service, and integrate custom authentication seamlessly.
 
 ## Instrumenting Your Frontend: The `data-mcp-*` Attributes
 
