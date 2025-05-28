@@ -5,15 +5,11 @@ import os
 import signal
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
-import traceback
-# import uvicorn # No longer directly using uvicorn to run the app
 
-# Adjusted FastMCP imports
 from fastmcp import (
     FastMCP, 
     Context
 )
-# Attempt to import ClientAuthContext from the local .models module
 from .models import ClientAuthContext
 from .core.playwright_controller import PlaywrightController, AutomationInterfaceImpl as AsyncAutomationInterfaceImpl
 from .core.dom_parser import DomParser
@@ -21,16 +17,8 @@ from .models import (
     InteractiveElementInfo,
     ActionResult,
     PlaywrightErrorType,
-    DomParserErrorType,
     McpServerOptions,
-    ParserResult,
-    DisplayContainerInfo,
-    PageRegionInfo,
-    StatusMessageAreaInfo,
-    LoadingIndicatorInfo,
-    CustomAttributeReader,
     CustomActionHandler,
-    AutomationInterface, 
     CustomActionHandlerParams,
 )
 
@@ -44,8 +32,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-logger.info("[mcp_server.py] Initializing MCP server logic...")
 
 # --- Global Instances ---
 playwright_controller: Optional[PlaywrightController] = None
@@ -61,17 +47,13 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
     Returns (None, None, None) if initialization fails.
     """
     global playwright_controller # Ensure we assign to the global instance
-    logger.info("[mcp_server.py] Starting browser and dependencies initialization...")
-    logger.info(f"[mcp_server.py] Options received: headless={options.headless_browser}, target_url={options.target_url}")
     
     temp_playwright_controller: Optional[PlaywrightController] = None # Use a temporary variable
     try:
-        logger.info("[mcp_server.py] Creating PlaywrightController instance...")
         temp_playwright_controller = PlaywrightController(
             launch_options={"headless": options.headless_browser},
             custom_attribute_readers=options.custom_attribute_readers
         )
-        logger.info("[mcp_server.py] PlaywrightController instance created successfully")
     except Exception as e_pc_init:
         logger.error("[mcp_server.py] Exception during PlaywrightController instantiation", exc_info=True)
         return None, None, None
@@ -82,10 +64,8 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
     # Launch Playwright
     launch_result: Optional[ActionResult] = None
     try:
-        logger.info("[mcp_server.py] Attempting to launch Playwright browser...")
         if playwright_controller: # Check if it was successfully created
             launch_result = await playwright_controller.launch()
-            logger.info(f"[mcp_server.py] Launch result: success={launch_result.success if launch_result else 'N/A'}, message={launch_result.message if launch_result else 'N/A'}")
         else:
             logger.error("[mcp_server.py] PlaywrightController was not instantiated. Cannot launch.")
             return None, None, None # Should not happen if previous try-except is correct
@@ -98,22 +78,17 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
         logger.error(f"[mcp_server.py] PlaywrightController launch failed: {launch_result.message if launch_result else 'No launch result'}")
         if playwright_controller: await playwright_controller.close()
         return None, None, None
-    
-    logger.info("[mcp_server.py] PlaywrightController launched successfully")
 
     # Navigate to the target URL
     if options.target_url:
-        logger.info(f"[mcp_server.py] Attempting to navigate to target URL: {options.target_url}...")
         nav_result: Optional[ActionResult] = None
         try:
             if playwright_controller: # Check again
                 nav_result = await playwright_controller.navigate(options.target_url)
-                logger.info(f"[mcp_server.py] Navigation result: success={nav_result.success if nav_result else 'N/A'}, message={nav_result.message if nav_result else 'N/A'}")
                 if not nav_result or not nav_result.success:
                     logger.error(f"[mcp_server.py] Failed to navigate to {options.target_url}. Message: {nav_result.message if nav_result else 'No navigation result'}")
                     await playwright_controller.close()
                     return None, None, None
-                logger.info(f"[mcp_server.py] Successfully navigated to {options.target_url}")
             else: # Should not be reachable if logic is correct
                 logger.error("[mcp_server.py] PlaywrightController not available for navigation.")
                 return None, None, None
@@ -126,14 +101,12 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
 
     global dom_parser # Ensure we assign to the global instance
     temp_dom_parser: Optional[DomParser] = None
-    logger.info("[mcp_server.py] Initializing DomParser...")
     try:
         if playwright_controller: # Check again
             temp_dom_parser = DomParser(
                 page=playwright_controller.get_page(), 
                 custom_attribute_readers=options.custom_attribute_readers
             )
-            logger.info("[mcp_server.py] DomParser initialized successfully")
         else: # Should not be reachable
             logger.error("[mcp_server.py] PlaywrightController not available for DomParser initialization.")
             return None, None, None
@@ -146,11 +119,9 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
 
     global automation_interface # Ensure we assign to the global instance
     temp_automation_interface: Optional[AsyncAutomationInterfaceImpl] = None
-    logger.info("[mcp_server.py] Initializing AutomationInterface...")
     try:
         if playwright_controller: # Check again
             temp_automation_interface = AsyncAutomationInterfaceImpl(playwright_controller=playwright_controller)
-            logger.info("[mcp_server.py] AutomationInterface initialized successfully")
         else: # Should not be reachable
              logger.error("[mcp_server.py] PlaywrightController not available for AutomationInterface initialization.")
              return None, None, None
@@ -161,17 +132,8 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
     
     automation_interface = temp_automation_interface
     
-    logger.info("[mcp_server.py] All components initialized successfully")
+    logger.info("[mcp_server.py] MCP UI Bridge components initialized successfully")
     return playwright_controller, dom_parser, automation_interface
-
-# --- Tool Execution Logic (will be decorated AFTER mcp_server_instance is created) --- 
-
-# Placeholder for tool definitions until mcp_server_instance is available
-# These will be decorated later in run_mcp_server or defined globally if mcp_server_instance is global from start
-
-async def _ping_tool_execute_impl() -> Dict[str, Any]:
-    logger.info("[mcp_server.py] ping_tool_execute called")
-    return {"success": True, "message": "pong"}
 
 async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
     """Core logic for the get_current_screen_data tool."""
@@ -187,7 +149,6 @@ async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
             "error_type": PlaywrightErrorType.NotInitialized.value
         }
     
-    logger.info("[mcp_server.py] get_current_screen_data: Fetching data...")
     try:
         page = playwright_controller.get_page()
         if not page or page.is_closed():
@@ -205,23 +166,23 @@ async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
         current_url = await page.evaluate("() => window.location.href")
 
         structured_data_payload = {
-            "containers": [], "regions": [], "status_messages": [], "loading_indicators": []
+            "containers": [], "regions": [], "statusMessages": [], "loadingIndicators": []
         }
         if structured_data_result.success and structured_data_result.data:
             structured_data_payload = structured_data_result.data
         
         interactive_elements_payload = []
         if interactive_elements_result.success and interactive_elements_result.data:
-            interactive_elements_payload = [el.model_dump(by_alias=True) for el in interactive_elements_result.data]
+            interactive_elements_payload = [el.model_dump() for el in interactive_elements_result.data]
 
         return {
             "success": True,
-            "current_url": current_url,
+            "currentUrl": current_url,
             "data": {
-                "structured_data": structured_data_payload,
-                "interactive_elements": interactive_elements_payload,
+                "structuredData": structured_data_payload,
+                "interactiveElements": interactive_elements_payload,
             },
-            "parser_messages": {
+            "parserMessages": {
                 "structured": structured_data_result.message,
                 "interactive": interactive_elements_result.message,
             },
@@ -236,8 +197,9 @@ async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
 
 async def _get_current_screen_actions_execute_impl() -> Dict[str, Any]:
     """Core logic for the get_current_screen_actions tool."""
+    # ORIGINAL COMPLEX VERSION - NOW ACTIVE
     global dom_parser, playwright_controller
-
+    
     if not dom_parser or not playwright_controller or not playwright_controller.get_page():
         logger.error(
             "[mcp_server.py] get_current_screen_actions: DomParser or PlaywrightController not initialized."
@@ -278,7 +240,7 @@ async def _get_current_screen_actions_execute_impl() -> Dict[str, Any]:
         actions = []
         for el_info_model in interactive_elements_result.data:
             # Convert Pydantic model to dict for easier processing here, similar to TS object
-            el = el_info_model.model_dump(by_alias=True)
+            el = el_info_model.model_dump()
             
             generated_actions: List[Dict[str, Any]] = []
 
@@ -304,7 +266,7 @@ async def _get_current_screen_actions_execute_impl() -> Dict[str, Any]:
 
             # Type action for text inputs
             if (
-                (el.get("elementType"," ").startswith("input-") and
+                (el.get("elementType", "").startswith("input-") and
                 el.get("elementType") not in [
                     "input-button", "input-submit", "input-checkbox", "input-radio",
                     "input-file", "input-reset", "input-image", "input-color", "input-range",
@@ -397,7 +359,6 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
         }
 
     command_string = params.command_string.strip()
-    logger.info(f"[mcp_server.py] Received command: {command_string}")
     await ctx.info(f"Executing command: {command_string}") # Example of using context
 
     import re
@@ -420,10 +381,6 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
         arg_regex = r'"[^"]+"|\S+'
         for arg_match in re.finditer(arg_regex, remaining_args_string):
             command_args.append(arg_match.group(0).strip('"'))
-
-    logger.info(
-        f"[mcp_server.py] Parsed Command: name='{command_name}', element_id='{element_id}', args={command_args}"
-    )
 
     result: ActionResult
     
@@ -464,7 +421,7 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
             # so it must be awaited.
             result = await custom_handler.handler(handler_params)
             logger.info(f"[mcp_server.py] Custom handler for \"{command_name}\" executed.")
-            return result.model_dump(by_alias=True)
+            return result.model_dump()
         except Exception as e:
             logger.exception(f"[mcp_server.py] Error in custom handler for \"{command_name}\":")
             return {
@@ -477,7 +434,7 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
         command_name in custom_action_handler_map and 
         not custom_action_handler_map[command_name].override_core_behavior
     ):
-        logger.info(f"[mcp_server.py] Custom handler for core command \"{command_name}\" exists but 'override_core_behavior' is false. Proceeding with core logic.")
+        pass  # Proceed with core logic
 
     # --- Core Command Logic (if no custom handler or not overridden) ---
     if not element_id and command_name in ["click", "type", "select", "check", "uncheck", "choose"]:
@@ -490,25 +447,19 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
 
     # Direct synchronous calls
     if command_name == "click" and element_id:
-        logger.info(f"[mcp_server.py] Executing core click on #{element_id}")
         result = await playwright_controller.click(element_id)
     elif command_name == "type" and element_id and command_args:
         text_to_type = command_args[0]
-        logger.info(f"[mcp_server.py] Executing core type \"{text_to_type}\" into #{element_id}")
         result = await playwright_controller.type_text(element_id, text_to_type)
     elif command_name == "select" and element_id and command_args:
         value_to_select = command_args[0]
-        logger.info(f"[mcp_server.py] Executing core select \"{value_to_select}\" for #{element_id}")
         result = await playwright_controller.select_option(element_id, value_to_select)
     elif command_name == "check" and element_id:
-        logger.info(f"[mcp_server.py] Executing core check on #{element_id}")
         result = await playwright_controller.check_element(element_id)
     elif command_name == "uncheck" and element_id:
-        logger.info(f"[mcp_server.py] Executing core uncheck on #{element_id}")
         result = await playwright_controller.uncheck_element(element_id)
     elif command_name == "choose" and element_id: 
         value_to_select = command_args[0] if command_args else element_id
-        logger.info(f"[mcp_server.py] Executing core choose on #{element_id} with value \"{value_to_select}\"")
         result = await playwright_controller.select_radio_button(element_id, value_to_select)
     elif not custom_action_handler_map.get(command_name): # Only if no custom handler was defined AT ALL
         logger.warning(f"[mcp_server.py] Unrecognized command: {command_name}")
@@ -525,7 +476,7 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
             error_type=PlaywrightErrorType.InvalidInput
         )
 
-    return result.model_dump(by_alias=True) # Return dict directly
+    return result.model_dump() # Return dict directly
 
 # --- Server Setup and Lifecycle ---
 
@@ -544,19 +495,14 @@ async def run_mcp_server(options: McpServerOptions) -> None:
     auth_callback: Optional[Callable[[ClientAuthContext], Awaitable[bool]]] = None
     if options.authenticate_client:
         auth_callback = options.authenticate_client
-        logger.info("[mcp_server.py] Client authentication callback is configured.")
-    else:
-        logger.info("[mcp_server.py] No client authentication callback configured. Server will be open.")
-
+    
     try:
         mcp_server_instance = FastMCP(
             title=options.server_name,
             description=options.server_instructions,
             version=options.server_version,
-            # tools list is removed, tools will be discovered via decorators later
             authenticate_client=auth_callback
         )
-        logger.info("[mcp_server.py] FastMCP server instance successfully created (pre-tool/browser initialization).")
     except Exception as e:
         logger.exception("[mcp_server.py] Failed to create FastMCP server instance")
         return
@@ -568,21 +514,26 @@ async def run_mcp_server(options: McpServerOptions) -> None:
         logger.critical("[mcp_server.py] Critical error during browser/dependencies initialization. Server cannot start.")
         return
 
+    # Register custom action handlers from options
+    global custom_action_handler_map
+    if options.custom_action_handlers:
+        for handler in options.custom_action_handlers:
+            if handler.command_name in custom_action_handler_map and not handler.override_core_behavior:
+                logger.warning(f"[mcp_server.py] Custom handler for command '{handler.command_name}' already exists and override_core_behavior is False. Skipping duplicate.")
+            else:
+                custom_action_handler_map[handler.command_name] = handler
+
     # Tool definitions using decorators
     if not mcp_server_instance:
         logger.error("[mcp_server.py] mcp_server_instance is None before tool decoration. This is a bug.")
         return # Cannot proceed to decorate tools
 
-    @mcp_server_instance.tool(name="ping", description="A simple ping tool to check server responsiveness.")
-    async def ping_tool_execute() -> Dict[str, Any]:
-        return await _ping_tool_execute_impl()
-
     @mcp_server_instance.tool(name="get_current_screen_data", description="Retrieves structured data and interactive elements from the current web page view.")
     async def get_current_screen_data_execute() -> Dict[str, Any]:
         return await _get_current_screen_data_execute_impl()
 
-    @mcp_server_instance.tool(name="get_current_screen_actions", description="Retrieves a list of possible actions (like click, type) for interactive elements on the current screen.")
-    async def get_current_screen_actions_execute() -> Dict[str, Any]:
+    @mcp_server_instance.tool(name="list_actions", description="Retrieves a list of possible actions (like click, type) for interactive elements on the current screen.")
+    async def list_actions_execute() -> Dict[str, Any]:
         return await _get_current_screen_actions_execute_impl()
 
     @mcp_server_instance.tool(name="send_command", description='Sends a command to interact with the web page (e.g., click button, type text). Command format: "action #elementId arguments..."')
@@ -606,17 +557,17 @@ async def run_mcp_server(options: McpServerOptions) -> None:
 
     try:
         # In the next steps, we will add tool definitions and the mcp_server_instance.run_async() call here.
-        logger.info(f"[mcp_server.py] Starting FastMCP server with run_async() on {host}:{port}, path /sse")
+        logger.info(f"[mcp_server.py] Starting FastMCP server with run_async() on {host}:{port}, path /mcp")
         if not mcp_server_instance: # Should be created above
              logger.error("[mcp_server.py] mcp_server_instance is None before run_async. FATAL.")
              if playwright_controller: await playwright_controller.close() # Best effort
              return
 
         await mcp_server_instance.run_async(
-            transport="sse", 
-            host=host, 
-            port=port, 
-            path="/sse" # Explicit path matching minimal example
+            transport="streamable-http",
+            host=host,
+            port=port,
+            path="/mcp" # Default path for streamable-http
         )
         logger.info("[mcp_server.py] mcp_server_instance.run_async() completed or was interrupted.")
 
@@ -660,8 +611,6 @@ async def main(config_path: Optional[str] = None) -> None:
     The mcp_ui_bridge_python.main (Typer app) is the preferred CLI entry point.
     This function loads configuration and runs the server.
     """
-    # Remove the temporary print statement from the top of the file.
-    # print("!!! EXECUTING THIS MCP_SERVER.PY VERSION - TOP OF FILE !!!") 
     logger.info("[mcp_server.py] MCP UI Bridge (Python) starting...")
 
     options: Optional[McpServerOptions] = None

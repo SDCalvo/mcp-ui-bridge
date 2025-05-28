@@ -105,22 +105,16 @@ class DomParser:
                 data=None
             )
 
-        logger.info("Scanning for interactive elements with state (async)...")
         try:
             elements_locator: Locator = self.page.locator(
                 f'[{DataAttributes.INTERACTIVE_ELEMENT}]'
             )
             count = await elements_locator.count()
-            logger.info(f"Found {count} interactive element(s) with state (async).")
 
             found_elements: List[InteractiveElementInfo] = []
 
             for i in range(count):
                 element_locator_instance = elements_locator.nth(i)
-                # ElementHandle is not typically needed for getting attributes with Locator API
-                # If direct ElementHandle is needed for specific evaluations not on Locator, one can do:
-                # element_handle = await element_locator_instance.element_handle()
-                # However, it's better to stick to Locator API if possible.
 
                 element_id_attr = await self._get_element_attribute(
                     element_locator_instance, DataAttributes.INTERACTIVE_ELEMENT
@@ -195,7 +189,7 @@ class DomParser:
                 
                 element_info_data: Dict[str, Any] = {
                     "id": element_id,
-                    "type": element_type, # Changed to 'type' to match Pydantic model
+                    "elementType": element_type, # Changed to 'elementType' to match Pydantic model
                     "label": label,
                     "isDisabled": is_disabled,
                     "isReadOnly": is_read_only,
@@ -223,14 +217,14 @@ class DomParser:
                     for reader in self.custom_attribute_readers:
                         raw_value = await self._get_element_attribute(element_locator_instance, reader.attribute_name)
                         try:
-                            # Assuming reader.process_value is sync, if it needs to be async, it should be awaited
-                            # and potentially take the locator/element_handle if it needs to do async operations itself.
-                            # For now, keeping it as it was in sync version for simplicity of the value processing part.
                             if reader.process_value:
-                                element_info_data["customData"][reader.output_key] = reader.process_value(
-                                    raw_value if raw_value is not None else None
-                                    # Pass element_locator_instance or await element_locator_instance.element_handle() if needed by process_value
+                                # Get ElementHandle for advanced processing (matching TypeScript feature parity)
+                                element_handle = await element_locator_instance.element_handle()
+                                processed_value = reader.process_value(
+                                    raw_value if raw_value is not None else None,
+                                    element_handle
                                 )
+                                element_info_data["customData"][reader.output_key] = processed_value
                             elif raw_value is not None:
                                 element_info_data["customData"][reader.output_key] = raw_value
                         except Exception as e:
@@ -267,7 +261,6 @@ class DomParser:
                 error_type=DomParserErrorType.PageNotAvailable,
                 data=None
             )
-        logger.info("Scanning for all structured data elements (async)...")
         try:
             containers_result = await self._find_display_containers_internal()
             regions_result = await self._find_page_regions_internal()
@@ -275,10 +268,10 @@ class DomParser:
             loading_indicators_result = await self._find_loading_indicators_internal()
 
             structured_data_dict = {
-                "containers": containers_result.data if containers_result.success and containers_result.data is not None else [],
-                "regions": regions_result.data if regions_result.success and regions_result.data is not None else [],
-                "status_messages": status_messages_result.data if status_messages_result.success and status_messages_result.data is not None else [],
-                "loading_indicators": loading_indicators_result.data if loading_indicators_result.success and loading_indicators_result.data is not None else []
+                "containers": [container.model_dump() for container in containers_result.data] if containers_result.success and containers_result.data is not None else [],
+                "regions": [region.model_dump() for region in regions_result.data] if regions_result.success and regions_result.data is not None else [],
+                "statusMessages": [status.model_dump() for status in status_messages_result.data] if status_messages_result.success and status_messages_result.data is not None else [],
+                "loadingIndicators": [indicator.model_dump() for indicator in loading_indicators_result.data] if loading_indicators_result.success and loading_indicators_result.data is not None else []
             }
 
             message = "Successfully retrieved all structured data (async)."
@@ -297,12 +290,10 @@ class DomParser:
         if not self.page:
             return ParserResult(success=False, message="Page not available", error_type=DomParserErrorType.PageNotAvailable, data=None)
         
-        logger.info("Scanning for display containers (async)...")
         found_containers: List[DisplayContainerInfo] = []
         try:
             container_locator: Locator = self.page.locator(f'[{DataAttributes.DISPLAY_CONTAINER}]')
             container_count = await container_locator.count()
-            logger.info(f"Found {container_count} display container(s) (async).")
 
             for i in range(container_count):
                 container_element_locator = container_locator.nth(i)
@@ -318,10 +309,6 @@ class DomParser:
 
                 item_locator: Locator = container_element_locator.locator(f'[{DataAttributes.DISPLAY_ITEM_TEXT}]')
                 item_count = await item_locator.count()
-                
-                logger.info(f"  - Container ID: {container_id}, found {item_count} item(s) (async).")
-                if region: logger.info(f"    Region: \"{region}\"")
-                if purpose: logger.info(f"    Purpose: \"{purpose}\"")
 
                 items_list: List[DisplayItem] = []
                 for j in range(item_count):
@@ -364,12 +351,10 @@ class DomParser:
     async def _find_page_regions_internal(self) -> ParserResult[List[PageRegionInfo]]:
         if not self.page:
             return ParserResult(success=False, message="Page not available", error_type=DomParserErrorType.PageNotAvailable, data=None)
-        logger.info("Scanning for page regions (async)...")
         found_regions: List[PageRegionInfo] = []
         try:
             region_locator: Locator = self.page.locator(f'[{DataAttributes.REGION}]')
             count = await region_locator.count()
-            logger.info(f"Found {count} page region(s) (async).")
 
             for i in range(count):
                 element_locator_instance = region_locator.nth(i)
@@ -385,9 +370,6 @@ class DomParser:
                 purpose = await self._get_element_attribute(element_locator_instance, DataAttributes.PURPOSE)
 
                 found_regions.append(PageRegionInfo(region_id=region_id, label=label, purpose=purpose))
-                log_msg = f"  - Region ID: \"{region_id}\", Label: \"{label}\" (async)"
-                if purpose: log_msg += f", Purpose: \"{purpose}\""
-                logger.info(log_msg)
             
             success_message = f"Successfully parsed {len(found_regions)} page regions (async)."
             return ParserResult(success=True, message=success_message, data=found_regions)
@@ -399,12 +381,10 @@ class DomParser:
     async def _find_status_message_areas_internal(self) -> ParserResult[List[StatusMessageAreaInfo]]:
         if not self.page:
             return ParserResult(success=False, message="Page not available", error_type=DomParserErrorType.PageNotAvailable, data=None)
-        logger.info("Scanning for status message areas (async)...")
         found_areas: List[StatusMessageAreaInfo] = []
         try:
             area_locator: Locator = self.page.locator(f'[{DataAttributes.STATUS_MESSAGE_CONTAINER}]')
             count = await area_locator.count()
-            logger.info(f"Found {count} status message area(s) (async).")
 
             for i in range(count):
                 element_locator_instance = area_locator.nth(i)
@@ -420,9 +400,6 @@ class DomParser:
                 messages = [text_content_result.strip()] if text_content_result and text_content_result.strip() else []
                 
                 found_areas.append(StatusMessageAreaInfo(container_id=container_id, messages=messages, purpose=purpose))
-                log_msg = f"  - Status Area ID: \"{container_id}\", Messages: {messages} (async)"
-                if purpose: log_msg += f", Purpose: \"{purpose}\""
-                logger.info(log_msg)
 
             success_message = f"Successfully parsed {len(found_areas)} status message areas (async)."
             return ParserResult(success=True, message=success_message, data=found_areas)
@@ -434,12 +411,10 @@ class DomParser:
     async def _find_loading_indicators_internal(self) -> ParserResult[List[LoadingIndicatorInfo]]:
         if not self.page:
             return ParserResult(success=False, message="Page not available", error_type=DomParserErrorType.PageNotAvailable, data=None)
-        logger.info("Scanning for loading indicators (async)...")
         found_indicators: List[LoadingIndicatorInfo] = []
         try:
             indicator_locator: Locator = self.page.locator(f'[{DataAttributes.LOADING_INDICATOR_FOR}]')
             count = await indicator_locator.count()
-            logger.info(f"Found {count} loading indicator(s) (async).")
 
             for i in range(count):
                 element_locator_instance = indicator_locator.nth(i)
@@ -459,9 +434,6 @@ class DomParser:
                 text = text_content_result.strip() if text_content_result and text_content_result.strip() else None
 
                 found_indicators.append(LoadingIndicatorInfo(element_id=element_id, is_loading_for=is_loading_for, text=text))
-                log_msg = f"  - Loading Indicator ID: \"{element_id}\", isLoadingFor: \"{is_loading_for}\" (async)"
-                if text: log_msg += f", Text: \"{text}\""
-                logger.info(log_msg)
             
             success_message = f"Successfully parsed {len(found_indicators)} loading indicators (async)."
             return ParserResult(success=True, message=success_message, data=found_indicators)

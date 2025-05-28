@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+import logging
 
 from app.api.models.todo import create_db_and_tables
 from app.api.routers.main_api_router import main_api_router # Adjusted import path
@@ -10,14 +11,17 @@ from app.api.routers.main_api_router import main_api_router # Adjusted import pa
 # Make sure your .env file is in the 'backend' directory (where Pipfile is)
 load_dotenv()
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Actions to perform on startup
-    print("INFO:     Application startup - Creating database and tables if they don't exist.")
+    logger.info("Application startup - Creating database and tables if they don't exist.")
     create_db_and_tables() 
     yield
     # Actions to perform on shutdown (if any)
-    print("INFO:     Application shutdown.")
+    logger.info("Application shutdown.")
 
 app = FastAPI(
     title="My MCP App Backend",

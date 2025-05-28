@@ -30,115 +30,73 @@ class PlaywrightController:
         self._active = False
 
     async def launch(self) -> ActionResult:
-        if self.browser:
-            message = "Browser launch skipped: Already launched."
-            logger.warning(message)
-            return ActionResult(success=True, message=message)
-        
-        logger.info("Starting browser launch process...")
-        logger.info(f"Launch options: {self.launch_options}")
-        
+        """Launch the browser with a new page."""
         try:
-            logger.info("Starting Playwright...")
+            if self.playwright:
+                message = "Browser already initialized."
+                logger.warning(message)
+                return ActionResult(success=False, message=message)
+
             self.playwright = await async_playwright().start()
-            logger.info("Playwright started successfully")
-            
-            logger.info("Launching Chromium browser...")
             self.browser = await self.playwright.chromium.launch(**self.launch_options)
-            logger.info("Chromium browser launched successfully")
-            
-            logger.info("Creating new browser context...")
             self.context = await self.browser.new_context()
-            logger.info("Browser context created successfully")
-            
-            logger.info("Creating new page...")
             self.page = await self.context.new_page()
-            logger.info("New page created successfully")
-            
-            self._active = True
-            message = "Browser launch completed successfully"
-            logger.info(message)
+
+            message = "Browser launched successfully."
             return ActionResult(success=True, message=message)
+
         except Exception as error:
-            err_message = "Failed to launch browser or create page"
+            err_message = "Failed to launch browser"
             logger.error(f"{err_message}. Error type: {type(error)}")
             logger.error(f"Error details: {str(error)}")
             logger.error(f"Error args: {error.args}")
-            
-            if self.playwright and self.browser:
-                logger.info("Attempting to close browser after launch failure...")
+
+            # Attempt cleanup on failure
+            if self.browser:
                 try:
                     await self.browser.close()
-                    logger.info("Browser closed successfully after launch failure")
+                    self.browser = None
                 except Exception as close_error:
                     logger.error(f"Failed to close browser after launch failure: {str(close_error)}")
-            
+
             if self.playwright:
-                logger.info("Attempting to stop Playwright after launch failure...")
                 try:
                     await self.playwright.stop()
-                    logger.info("Playwright stopped successfully after launch failure")
+                    self.playwright = None
                 except Exception as stop_error:
                     logger.error(f"Failed to stop Playwright after launch failure: {str(stop_error)}")
-            
-            self.browser = None
-            self.context = None
-            self.page = None
-            self.playwright = None
-            self._active = False
-            
+
             return ActionResult(
                 success=False,
-                message=f"{err_message}. Error: {str(error)}",
-                error_type=PlaywrightErrorType.BrowserLaunchFailed,
+                message=f"{err_message}: {str(error)}",
+                error_type=PlaywrightErrorType.BrowserLaunchFailed
             )
 
     async def _get_attribute(self, locator: Locator, attribute_name: str) -> Optional[str]:
         value = await locator.get_attribute(attribute_name)
         return value if value is not None else None
 
-    async def navigate(self, url: str, nav_options: Optional[Dict[str, Any]] = None) -> ActionResult:
-        """Navigates the current page to the specified URL."""
+    async def navigate(self, url: str, wait_until: str = "networkidle", timeout: int = 30000) -> ActionResult:
+        """Navigate to a URL."""
         if not self.page:
-            message = "Navigation failed: Page is not initialized. Call launch() first."
+            message = "Cannot navigate: Page not initialized."
             logger.error(message)
-            return ActionResult(
-                success=False,
-                message=message,
-                error_type=PlaywrightErrorType.PageNotAvailable,
-            )
-        
-        # Ensure the URL is a string before passing to Playwright
-        str_url = str(url) # Explicitly cast to string
+            return ActionResult(success=False, message=message, error_type=PlaywrightErrorType.PageNotAvailable)
 
-        effective_nav_options = nav_options or {}
-        # Default to 'domcontentloaded' for potentially faster navigation start, similar to TS version
-        wait_until = effective_nav_options.get("wait_until", "domcontentloaded")
-        # Longer timeout for navigation, double the default action timeout
-        timeout = effective_nav_options.get("timeout", self.DEFAULT_TIMEOUT * 2)
-
-        logger.info(f"Navigating to {str_url} with wait_until='{wait_until}', timeout={timeout}ms...")
         try:
-            await self.page.goto(str_url, wait_until=wait_until, timeout=timeout) # Use str_url
-            message = f"Successfully navigated to {str_url}."
-            logger.info(message)
+            str_url = str(url) if not isinstance(url, str) else url
+            await self.page.goto(str_url, wait_until=wait_until, timeout=timeout)
+
+            message = f"Successfully navigated to {str_url}"
             return ActionResult(success=True, message=message)
+
         except Exception as error:
-            err_message = f"Failed to navigate to {str_url}."
+            err_message = f"Failed to navigate to {url}"
             logger.error(f"{err_message} Details: {str(error)}")
-            
-            error_type = PlaywrightErrorType.NavigationFailed
-            # Check if the error is a Playwright TimeoutError
-            # The exact way to check can depend on the Playwright version and error structure
-            # A common approach is to check the error's class name or a specific attribute if available.
-            # For now, a string check in the error message or type name is a common fallback.
-            if "TimeoutError" in error.__class__.__name__ or "Timeout context manager" in str(error):
-                 error_type = PlaywrightErrorType.Timeout
-            
             return ActionResult(
                 success=False,
-                message=f"{err_message} Details: {str(error)}",
-                error_type=error_type,
+                message=f"{err_message}: {str(error)}",
+                error_type=PlaywrightErrorType.NavigationFailed
             )
 
     def get_page(self) -> Optional[Page]:
@@ -198,7 +156,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f"Attempting to click element with ID: {element_id} (selector: {selector}) (async)")
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -220,7 +177,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f'Attempting to type into element ID: {element_id} (selector: {selector}) with text: "{text}" (async)')
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -241,7 +197,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f'Attempting to select option with value "{value}" in element ID: {element_id} (selector: {selector}) (async)')
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -264,7 +219,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f"Attempting to check element ID: {element_id} (selector: {selector}) (async)")
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -285,7 +239,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f"Attempting to uncheck element ID: {element_id} (selector: {selector}) (async)")
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -306,7 +259,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         group_member_selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{radio_button_id_in_group}"]'
-        logger.info(f'Attempting to select radio button with value "{value_to_select}" in group identified by element ID: {radio_button_id_in_group} (async)')
         try:
             group_member_element = self.page.locator(group_member_selector).first
             if await group_member_element.count() == 0:
@@ -339,7 +291,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f"Attempting to hover over element ID: {element_id} (selector: {selector}) (async)")
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -360,7 +311,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f"Attempting to clear element ID: {element_id} (selector: {selector}) (async)")
         try:
             element = self.page.locator(selector).first
             if await element.count() == 0:
@@ -416,7 +366,6 @@ class PlaywrightController:
             return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable, data=None)
         actual_timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         selector = f'[{DataAttributes.INTERACTIVE_ELEMENT}="{element_id}"]'
-        logger.info(f"Getting state for element with ID: {element_id} (async)")
         try:
             element_locator = self.page.locator(selector).first
             await element_locator.wait_for(state="attached", timeout=actual_timeout)
@@ -497,13 +446,13 @@ class PlaywrightController:
                     raw_value = await self._get_attribute(element_locator, reader.attribute_name)
                     try:
                         if reader.process_value:
-                            # process_value might need to be async or run in thread if it's blocking
-                            # For now, assuming it's a simple sync function or needs to be adapted.
-                            # ElementHandle is not directly available here with async locator, this part needs rethink
-                            # For now, removing element_handle from process_value call if it's not easily obtainable
-                            # or if process_value can work without it for the Python version.
-                            # Let's assume process_value in Python takes only raw_value for now.
-                            state_data["customData"][reader.output_key] = reader.process_value(raw_value if raw_value is not None else None)
+                            # Get ElementHandle for advanced processing (matching TypeScript feature parity)
+                            element_handle = await element_locator.element_handle()
+                            processed_value = reader.process_value(
+                                raw_value if raw_value is not None else None,
+                                element_handle
+                            )
+                            state_data["customData"][reader.output_key] = processed_value
                         elif raw_value is not None:
                             state_data["customData"][reader.output_key] = raw_value
                     except Exception as e:
@@ -513,12 +462,6 @@ class PlaywrightController:
             message = f"Successfully retrieved state for element {element_id} (async)."
             # Create the Pydantic model from the collected state_data
             # Ensure InteractiveElementInfo fields match keys in state_data
-            # For example, 'type' vs 'elementType'. The Pydantic model uses 'type'.
-            # We need to map 'elementType' from state_data to 'type' for the model.
-            if "elementType" in state_data:
-                state_data["type"] = state_data.pop("elementType")
-
-
             element_info_obj = InteractiveElementInfo(**state_data)
             return ActionResult(success=True, message=message, data=element_info_obj)
 

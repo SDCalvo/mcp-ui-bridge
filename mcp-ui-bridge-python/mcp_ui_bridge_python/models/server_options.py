@@ -1,9 +1,15 @@
-from typing import Optional, List, Dict, Any, Callable, Awaitable, Union
+from typing import Optional, List, Dict, Any, Callable, Awaitable, Union, TYPE_CHECKING
 from pydantic import BaseModel, Field, HttpUrl
 
 # Correctly import from existing model files
 from mcp_ui_bridge_python.models.actions import ActionResult 
 from mcp_ui_bridge_python.models.elements import InteractiveElementInfo
+
+# Type checking import for ElementHandle
+if TYPE_CHECKING:
+    from playwright.async_api import ElementHandle as PlaywrightElementHandle
+else:
+    PlaywrightElementHandle = Any
 
 # Type Alias for the authentication callback
 ClientAuthContextHeaders = Dict[str, Union[str, List[str], None]]
@@ -14,31 +20,29 @@ class ClientAuthContext(BaseModel):
     source_ip: Optional[str] = None
 
     class Config:
-        populate_by_name = True # Allow population by field name in addition to alias
+        populate_by_name = True
 
 AuthenticateClientCallback = Callable[[ClientAuthContext], Awaitable[bool]]
 
 # Forward declaration for Playwright ElementHandle (as Any for now)
-ElementHandle = Any # This is likely not used here, consider removing if not needed by these models
+ElementHandle = Any
 
 class CustomAttributeReader(BaseModel):
     """Defines how to read a custom HTML attribute and map it to an element's custom data."""
     attribute_name: str = Field(..., description="The name of the HTML attribute to read (e.g., data-mcp-custom-id).")
     output_key: str = Field(..., description="The key under which the attribute's value will be stored in the element's customData.")
+    process_value: Optional[Callable[[Optional[str], Optional[PlaywrightElementHandle]], Union[str, int, float, bool, None]]] = Field(None, description="Optional function to process the raw attribute value before storing it. Receives both the attribute value and the ElementHandle for advanced processing.")
 
 class AutomationInterface(BaseModel):
     """Placeholder model representing the automation interface provided to custom action handlers."""
-    # This model serves as a type hint placeholder.
-    # The actual implementation with methods is PlaywrightController.AutomationInterfaceImpl.
     pass
 
-# InteractiveElementInfo and ActionResult are now imported, so their re-definitions are removed.
 
 class CustomActionHandlerParams(BaseModel):
     """Parameters passed to a custom action handler function."""
     element: Optional[InteractiveElementInfo] = Field(None, description="The target interactive element, if applicable.")
     command_args: List[str] = Field(default_factory=list, description="Arguments extracted from the command string.")
-    automation: Any # Actual type: mcp_ui_bridge_python.core.playwright_controller.AutomationInterfaceImpl
+    automation: Any
 
 class CustomActionHandler(BaseModel):
     """Defines a custom command that can be invoked through the MCP server."""

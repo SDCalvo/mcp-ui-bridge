@@ -1,20 +1,16 @@
-# Placeholder for main CLI application logic
 import asyncio
 import json
 import logging
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import typer
 from typing_extensions import Annotated
-from pydantic.fields import FieldInfo # For checking field properties in Pydantic v2
-from pydantic_core import PydanticUndefined # For checking default values
+from pydantic_core import PydanticUndefined
 
-# Assuming mcp_server.main can be refactored or we call run_mcp_server directly
-from .mcp_server import run_mcp_server, McpServerOptions # Changed from main to run_mcp_server
-from .models import CustomAttributeReader, CustomActionHandler # For config loading if needed later
+from .mcp_server import run_mcp_server, McpServerOptions
 
 app = typer.Typer(
     name="mcp-ui-bridge",
@@ -23,15 +19,17 @@ app = typer.Typer(
 )
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO) # Ensure logger is configured
+logging.basicConfig(level=logging.INFO)
 
-def load_options_from_config_file(config_path: Path) -> dict:
-    if not config_path.is_file():
-        logger.warning(f"Config file {config_path} not found. Skipping.")
-        return {}
+def load_config_from_file(config_path: str) -> Dict[str, Any]:
+    """Load configuration from a JSON file."""
     try:
-        config_data = json.loads(config_path.read_text())
-        logger.info(f"Successfully loaded configuration from {config_path}")
+        if not os.path.exists(config_path):
+            logger.warning(f"Config file {config_path} not found. Skipping.")
+            return {}
+        
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
         return config_data
     except json.JSONDecodeError as e:
         logger.error(f"Error decoding JSON from config file {config_path}: {e}. Skipping.")
@@ -48,7 +46,7 @@ def start(
             "--config",
             "-c",
             help="Path to a JSON configuration file for McpServerOptions.",
-            exists=False, # Allow path even if file doesn't exist, handle in loading
+            exists=False,
             file_okay=True,
             dir_okay=False,
             writable=False,
@@ -69,28 +67,23 @@ def start(
         typer.Option(help="Host for the MCP server to bind to.")
     ] = None,
     headless: Annotated[
-        Optional[bool], # typer. conferma bool con flag --headless/--no-headless
-        typer.Option(help="Run the browser in headless mode.", ) # Default determined by McpServerOptions or env
+        Optional[bool],
+        typer.Option(help="Run the browser in headless mode.", )
     ] = None,
     server_name: Annotated[Optional[str], typer.Option(help="Name of the MCP server.")] = None,
     server_version: Annotated[Optional[str], typer.Option(help="Version of the MCP server (e.g., 1.0.0).")] = None,
     server_instructions: Annotated[Optional[str], typer.Option(help="Instruction string for the MCP server.")] = None,
-    # We might need to handle custom_attribute_readers and custom_action_handlers loading here
-    # if they are complex and not directly passable as simple CLI args or basic JSON.
-    # For now, assuming they are part of the config file.
 ) -> None:
     """
     Starts the MCP UI Bridge server.
     """
-    logger.info("MCP UI Bridge (Python) CLI starting...")
 
     config_from_file = {}
     if config_file:
-        config_from_file = load_options_from_config_file(config_file)
+        config_from_file = load_config_from_file(str(config_file))
 
     # Determine option precedence: CLI > Config File > Environment Variables > Pydantic Model Defaults
 
-    # Helper to resolve options
     def _resolve_option(cli_val, file_key, env_var, default_from_model=None, is_bool=False, is_int=False):
         if cli_val is not None:
             return cli_val
@@ -105,21 +98,12 @@ def start(
                     return int(env_val_str)
                 except ValueError:
                     logger.warning(f"Invalid integer value for env var {env_var}: {env_val_str}. Using model default.")
-                    return default_from_model # Fallback to model default if env var is bad
+                    return default_from_model
             return env_val_str
         return default_from_model
 
-
-    # These defaults are from McpServerOptions Pydantic model if not specified anywhere else.
-    # For now, we let Pydantic handle defaults if nothing is passed.
-    # However, to implement full precedence for all vars, we might need to query model defaults.
-    
-    # For complex types like custom_attribute_readers, custom_action_handlers,
-    # they are typically best loaded from the config file.
-    # We'll assume McpServerOptions can take them as dicts from config_from_file.
-
     final_options_dict = {}
-    final_options_dict.update(config_from_file) # Load from config file first
+    final_options_dict.update(config_from_file)
 
     _target_url = _resolve_option(target_url, "target_url", "MCP_TARGET_URL")
     if _target_url: final_options_dict["target_url"] = _target_url
@@ -147,15 +131,13 @@ def start(
             final_options_dict["server_version"] = _server_version
             
     _server_instructions = _resolve_option(server_instructions, "server_instructions", "MCP_SERVER_INSTRUCTIONS")
-    if _server_instructions: final_options_dict["server_instructions"] = _server_instructions # Changed from server_description
+    if _server_instructions: final_options_dict["server_instructions"] = _server_instructions
     
-    # Ensure required fields like target_url are present
     resolved_target_url = final_options_dict.get("target_url")
     if not resolved_target_url:
         target_url_field_info = McpServerOptions.model_fields.get('target_url')
-        is_target_url_required = True # Assume required by default
+        is_target_url_required = True
         if target_url_field_info:
-            # A field is not required if it has a default value or default_factory
             is_target_url_required = (target_url_field_info.default is PydanticUndefined and 
                                       target_url_field_info.default_factory is None)
 
@@ -165,9 +147,6 @@ def start(
                 "Please provide it via --target-url, config file, or MCP_TARGET_URL environment variable."
             )
              raise typer.Exit(code=1)
-        # If not required (i.e., has a default in Pydantic model) or env var is set, Pydantic will handle it.
-
-    logger.info(f"Final McpServerOptions dictionary to be used for Pydantic: {final_options_dict}")
 
     try:
         mcp_options = McpServerOptions(**final_options_dict)

@@ -4,6 +4,11 @@
             "transport": "sse",
             "url": "http://localhost:8070/sse",
             "description": "Standalone MCP server (mcp-external-server) using react-cli-mcp to interact with a remote React app."
+        },
+        "mcp-external-react-agent-python": {
+            "transport": "sse",
+            "url": "http://localhost:8070/mcp",
+            "description": "Standalone MCP server (mcp-external-server) using react-cli-mcp to interact with a remote React app."
         }
     }
 }
