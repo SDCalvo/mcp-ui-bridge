@@ -398,7 +398,7 @@ function addSendCommandTool(mcpServer: FastMCP<any>) {
   mcpServer.addTool({
     name: "send_command",
     description:
-      'Sends a command to interact with an element on the screen. Supported commands: click #elementId, type #elementId "text to type", select #elementId "valueToSelect", check #elementId, uncheck #elementId, choose #elementId [in_group groupName].',
+      'Sends a command to interact with an element on the screen. Supported commands: click #elementId, type #elementId "text to type", select #elementId "valueToSelect", check #elementId, uncheck #elementId, choose #elementId [in_group groupName], scroll-up, scroll-down.',
     parameters: z.object({
       command_string: z.string(),
     }),
@@ -596,6 +596,12 @@ function addSendCommandTool(mcpServer: FastMCP<any>) {
           elementId,
           valueToSelect
         );
+      } else if (commandName === "scroll-up") {
+        console.log(`[mcp_server.ts] Executing core scroll up`);
+        result = await playwrightController.scrollPageUp();
+      } else if (commandName === "scroll-down") {
+        console.log(`[mcp_server.ts] Executing core scroll down`);
+        result = await playwrightController.scrollPageDown();
       } else if (!customActionHandlerMap.has(commandName)) {
         // Only if no custom handler was defined at all
         console.warn(`[mcp_server.ts] Unrecognized command: ${commandName}`);

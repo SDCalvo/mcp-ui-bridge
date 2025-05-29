@@ -461,6 +461,12 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
     elif command_name == "choose" and element_id: 
         value_to_select = command_args[0] if command_args else element_id
         result = await playwright_controller.select_radio_button(element_id, value_to_select)
+    elif command_name == "scroll-up":
+        logger.info("[mcp_server.py] Executing core scroll up")
+        result = await playwright_controller.scroll_page_up()
+    elif command_name == "scroll-down":
+        logger.info("[mcp_server.py] Executing core scroll down")
+        result = await playwright_controller.scroll_page_down()
     elif not custom_action_handler_map.get(command_name): # Only if no custom handler was defined AT ALL
         logger.warning(f"[mcp_server.py] Unrecognized command: {command_name}")
         result = ActionResult(
@@ -536,7 +542,7 @@ async def run_mcp_server(options: McpServerOptions) -> None:
     async def list_actions_execute() -> Dict[str, Any]:
         return await _get_current_screen_actions_execute_impl()
 
-    @mcp_server_instance.tool(name="send_command", description='Sends a command to interact with the web page (e.g., click button, type text). Command format: "action #elementId arguments..."')
+    @mcp_server_instance.tool(name="send_command", description='Sends a command to interact with the web page (e.g., click button, type text, scroll). Command format: "action #elementId arguments...". Supported actions: click, type, select, check, uncheck, choose, scroll-up, scroll-down.')
     async def send_command_tool_execute(params: SendCommandParams, ctx: Context) -> Dict[str, Any]:
         return await _send_command_tool_execute_impl(params, ctx)
 

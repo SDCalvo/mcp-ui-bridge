@@ -304,6 +304,31 @@ const TestFeaturesPage: React.FC = () => {
           </div>
         </div>
       </div>
+      <div
+        className="stress-test-container"
+        data-mcp-region="stress-test-container"
+        data-mcp-purpose="Stress test container"
+      >
+        {Array.from({ length: 200 }).map((_, i) => (
+          <div
+            className="stress-test-item"
+            key={i}
+            data-mcp-region="stress-test-item"
+            data-mcp-purpose="Stress test item"
+          >
+            <h2 className="card-title h5">Stress Test Item {i}</h2>
+            <button
+              className="btn btn-primary"
+              onClick={() => {}}
+              data-mcp-interactive-element="stress-test-button"
+              data-mcp-element-label="Stress test button"
+              data-mcp-purpose="Stress test button"
+            >
+              Click me
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

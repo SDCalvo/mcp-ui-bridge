@@ -854,6 +854,58 @@ export class PlaywrightController {
       };
     }
   }
+
+  async scrollPageDown(): Promise<ActionResult> {
+    if (!this.page) {
+      const message = "Scroll down failed: Page is not initialized.";
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    try {
+      await this.page.evaluate(() => window.scrollBy(0, window.innerHeight));
+      const message = "Successfully scrolled down the page.";
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      const errMessage = "Failed to scroll down the page.";
+      console.error(errMessage, error);
+      return {
+        success: false,
+        message: `${errMessage} Error: ${error.message}`,
+        errorType: PlaywrightErrorType.ActionFailed,
+      };
+    }
+  }
+
+  async scrollPageUp(): Promise<ActionResult> {
+    if (!this.page) {
+      const message = "Scroll up failed: Page is not initialized.";
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    try {
+      await this.page.evaluate(() => window.scrollBy(0, -window.innerHeight));
+      const message = "Successfully scrolled up the page.";
+      console.log(message);
+      return { success: true, message };
+    } catch (error: any) {
+      const errMessage = "Failed to scroll up the page.";
+      console.error(errMessage, error);
+      return {
+        success: false,
+        message: `${errMessage} Error: ${error.message}`,
+        errorType: PlaywrightErrorType.ActionFailed,
+      };
+    }
+  }
 }
 
 // --- Implementation of AutomationInterface for Custom Action Handlers ---

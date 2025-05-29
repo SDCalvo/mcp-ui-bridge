@@ -477,6 +477,36 @@ class PlaywrightController:
             logger.error(f"ERROR: {err_message} Details: {error}")
             return ActionResult(success=False, message=f"{err_message} Details: {str(error)}", error_type=error_type, data=None)
 
+    async def scroll_page_down(self) -> ActionResult:
+        if not self.page:
+            message = "Scroll down failed: Page is not initialized."
+            logger.error(message)
+            return ActionResult(success=False, message=message, error_type=PlaywrightErrorType.PageNotAvailable)
+        try:
+            await self.page.evaluate("window.scrollBy(0, window.innerHeight)")
+            message = "Successfully scrolled down the page."
+            logger.info(message)
+            return ActionResult(success=True, message=message)
+        except Exception as error:
+            err_message = "Failed to scroll down the page."
+            logger.error(f"{err_message} Details: {error}")
+            return ActionResult(success=False, message=f"{err_message} Error: {str(error)}", error_type=PlaywrightErrorType.ActionFailed)
+
+    async def scroll_page_up(self) -> ActionResult:
+        if not self.page:
+            message = "Scroll up failed: Page is not initialized."
+            logger.error(message)
+            return ActionResult(success=False, message=message, error_type=PlaywrightErrorType.PageNotAvailable)
+        try:
+            await self.page.evaluate("window.scrollBy(0, -window.innerHeight)")
+            message = "Successfully scrolled up the page."
+            logger.info(message)
+            return ActionResult(success=True, message=message)
+        except Exception as error:
+            err_message = "Failed to scroll up the page."
+            logger.error(f"{err_message} Details: {error}")
+            return ActionResult(success=False, message=f"{err_message} Error: {str(error)}", error_type=PlaywrightErrorType.ActionFailed)
+
     pass
 
 

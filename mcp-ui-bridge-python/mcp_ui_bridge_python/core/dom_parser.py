@@ -94,6 +94,38 @@ class DomParser:
         
         return element_id # Fallback
     
+    async def _is_element_in_viewport(self, element: ElementHandle) -> bool:
+        bounding_box = await element.bounding_box()
+        if not bounding_box:
+            return False
+
+        viewport = await self.page.viewport_size()
+        if not viewport:
+            return False
+
+        return (
+            bounding_box['x'] < viewport['width'] and
+            bounding_box['y'] < viewport['height'] and
+            bounding_box['x'] + bounding_box['width'] > 0 and
+            bounding_box['y'] + bounding_box['height'] > 0
+        )
+
+    async def _is_scrollable(self) -> bool:
+        body_handle = await self.page.query_selector('body')
+        if not body_handle:
+            return False
+
+        body_scroll_height = await body_handle.evaluate("body => body.scrollHeight")
+        viewport_height = (await self.page.viewport_size())['height']
+
+        return body_scroll_height > viewport_height
+
+    async def scroll_down(self) -> None:
+        await self.page.evaluate("window.scrollBy(0, window.innerHeight)")
+
+    async def scroll_up(self) -> None:
+        await self.page.evaluate("window.scrollBy(0, -window.innerHeight)")
+
     async def get_interactive_elements_with_state(self) -> ParserResult[List[InteractiveElementInfo]]:
         if not self.page:
             message = "DOM parsing for interactive elements failed: Page object is not available."
@@ -116,6 +148,11 @@ class DomParser:
             for i in range(count):
                 element_locator_instance = elements_locator.nth(i)
 
+                # Check if the element is in the viewport
+                element_handle = await element_locator_instance.element_handle()
+                if not element_handle or not await self._is_element_in_viewport(element_handle):
+                    continue
+
                 element_id_attr = await self._get_element_attribute(
                     element_locator_instance, DataAttributes.INTERACTIVE_ELEMENT
                 )
@@ -125,7 +162,7 @@ class DomParser:
                         "WARN: Found an element with data-mcp-interactive-element attribute but no value. Skipping."
                     )
                     continue
-                
+
                 element_id = element_id_attr
 
                 element_type = await self._get_element_type(element_locator_instance)
@@ -184,9 +221,9 @@ class DomParser:
                         text_content_result = await option_loc.text_content()
                         text = text_content_result.strip() if text_content_result else ""
                         selected = await option_loc.evaluate("el => el.selected")
-                        
+
                         options_list.append(InteractiveElementOption(value=value, text=text, selected=bool(selected)))
-                
+
                 element_info_data: Dict[str, Any] = {
                     "id": element_id,
                     "elementType": element_type, # Changed to 'elementType' to match Pydantic model
@@ -199,7 +236,7 @@ class DomParser:
                 if is_checked is not None: element_info_data["isChecked"] = is_checked
                 if options_list is not None: element_info_data["options"] = [opt.model_dump() for opt in options_list]
                 if radio_group is not None: element_info_data["radioGroup"] = radio_group
-                
+
                 for attr_key, data_attr_name in [
                     ("purpose", DataAttributes.PURPOSE),
                     ("group", DataAttributes.GROUP),
@@ -230,13 +267,18 @@ class DomParser:
                         except Exception as e:
                             logger.warning(f"WARN: Error processing custom attribute \"{reader.attribute_name}\" for element \"{element_id}\" with key \"{reader.output_key}\" (async): {e}")
                             element_info_data["customData"][reader.output_key] = "ERROR_PROCESSING_ATTRIBUTE"
-                
+
                 try:
                     element_info = InteractiveElementInfo(**element_info_data)
                     found_elements.append(element_info)
                 except Exception as pydantic_error: 
                     logger.error(f"ERROR: Pydantic validation failed for element {element_id} (async): {pydantic_error}. Data: {element_info_data}")
                     continue
+
+            # Check if scrolling is possible
+            scrollable = await self._is_scrollable()
+            if scrollable:
+                logger.info("More elements are available beyond the current viewport. Scrolling is possible.")
 
             success_message = f"Successfully parsed {len(found_elements)} interactive elements with state (async)."
             return ParserResult(success=True, message=success_message, data=found_elements)

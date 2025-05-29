@@ -105,6 +105,54 @@ export class DomParser {
     return elementId; // Fallback to elementId
   }
 
+  private async isElementInViewport(element: ElementHandle): Promise<boolean> {
+    const boundingBox = await element.boundingBox();
+    if (!boundingBox) return false;
+
+    const viewport = await this.page?.viewportSize();
+    if (!viewport) return false;
+
+    return (
+      boundingBox.x < viewport.width &&
+      boundingBox.y < viewport.height &&
+      boundingBox.x + boundingBox.width > 0 &&
+      boundingBox.y + boundingBox.height > 0
+    );
+  }
+
+  private async isScrollable(): Promise<boolean> {
+    const bodyHandle = await this.page?.$("body");
+    if (!bodyHandle) return false;
+
+    const bodyScrollHeight = await bodyHandle.evaluate(
+      (body) => body.scrollHeight
+    );
+    const viewportHeight = (await this.page?.viewportSize())?.height || 0;
+
+    return bodyScrollHeight > viewportHeight;
+  }
+
+  private async isAtBottom(): Promise<boolean> {
+    const bodyHandle = await this.page?.$("body");
+    if (!bodyHandle) return false;
+
+    const bodyScrollHeight = await bodyHandle.evaluate(
+      (body) => body.scrollHeight
+    );
+    const scrollY = (await this.page?.evaluate(() => window.scrollY)) || 0;
+    const viewportHeight = (await this.page?.viewportSize())?.height || 0;
+
+    return scrollY + viewportHeight >= bodyScrollHeight;
+  }
+
+  async scrollDown(): Promise<void> {
+    await this.page?.evaluate(() => window.scrollBy(0, window.innerHeight));
+  }
+
+  async scrollUp(): Promise<void> {
+    await this.page?.evaluate(() => window.scrollBy(0, -window.innerHeight));
+  }
+
   async getInteractiveElementsWithState(): Promise<
     ParserResult<InteractiveElementInfo[]>
   > {
@@ -129,10 +177,37 @@ export class DomParser {
       console.log(`Found ${count} interactive element(s) with state.`);
 
       const foundElements: InteractiveElementInfo[] = [];
+      const maxElementsToCheck = Math.min(count, 20); // Much more aggressive limit
+      let processedCount = 0;
 
-      for (let i = 0; i < count; i++) {
+      console.log(
+        `Processing first ${maxElementsToCheck} elements for viewport visibility...`
+      );
+
+      for (let i = 0; i < maxElementsToCheck; i++) {
         const elementHandle = await elementsLocator.nth(i).elementHandle();
-        if (!elementHandle) continue;
+        if (!elementHandle) {
+          continue;
+        }
+
+        // Quick viewport check using bounding box
+        const boundingBox = await elementHandle.boundingBox();
+        if (!boundingBox) continue;
+
+        const viewport = await this.page?.viewportSize();
+        if (!viewport) continue;
+
+        // Skip if element is completely outside viewport
+        if (
+          boundingBox.y + boundingBox.height < 0 ||
+          boundingBox.y > viewport.height ||
+          boundingBox.x + boundingBox.width < 0 ||
+          boundingBox.x > viewport.width
+        ) {
+          continue;
+        }
+
+        processedCount++;
 
         const elementId = await this.getElementAttribute(
           elementHandle,
@@ -274,7 +349,7 @@ export class DomParser {
           DataAttributes.ELEMENT_STATE
         );
 
-        const elementInfo: InteractiveElementInfo = {
+        const interactiveElementInfo: InteractiveElementInfo = {
           id: elementId,
           elementType,
           label,
@@ -282,25 +357,29 @@ export class DomParser {
           isReadOnly,
         };
 
-        if (currentValue !== undefined) elementInfo.currentValue = currentValue;
-        if (isChecked !== undefined) elementInfo.isChecked = isChecked;
-        if (options !== undefined) elementInfo.options = options;
+        if (currentValue !== undefined)
+          interactiveElementInfo.currentValue = currentValue;
+        if (isChecked !== undefined)
+          interactiveElementInfo.isChecked = isChecked;
+        if (options !== undefined) interactiveElementInfo.options = options;
         if (radioName !== undefined && elementType === "input-radio")
-          elementInfo.radioGroup = radioName;
-        if (purpose !== undefined) elementInfo.purpose = purpose;
-        if (group !== undefined) elementInfo.group = group;
-        if (controls !== undefined) elementInfo.controls = controls;
+          interactiveElementInfo.radioGroup = radioName;
+        if (purpose !== undefined) interactiveElementInfo.purpose = purpose;
+        if (group !== undefined) interactiveElementInfo.group = group;
+        if (controls !== undefined) interactiveElementInfo.controls = controls;
         if (updatesContainer !== undefined)
-          elementInfo.updatesContainer = updatesContainer;
-        if (navigatesTo !== undefined) elementInfo.navigatesTo = navigatesTo;
-        if (customState !== undefined) elementInfo.customState = customState;
+          interactiveElementInfo.updatesContainer = updatesContainer;
+        if (navigatesTo !== undefined)
+          interactiveElementInfo.navigatesTo = navigatesTo;
+        if (customState !== undefined)
+          interactiveElementInfo.customState = customState;
 
         // Process custom attributes
         if (
           this.customAttributeReaders &&
           this.customAttributeReaders.length > 0
         ) {
-          elementInfo.customData = {}; // Initialize customData
+          interactiveElementInfo.customData = {}; // Initialize customData
           for (const reader of this.customAttributeReaders) {
             const rawValue = await this.getElementAttribute(
               elementHandle,
@@ -308,36 +387,38 @@ export class DomParser {
             );
             try {
               if (reader.processValue) {
-                elementInfo.customData[reader.outputKey] = reader.processValue(
-                  rawValue === undefined ? null : rawValue, // Pass null if attribute not found
-                  elementHandle
-                );
+                interactiveElementInfo.customData[reader.outputKey] =
+                  reader.processValue(
+                    rawValue === undefined ? null : rawValue, // Pass null if attribute not found
+                    elementHandle
+                  );
               } else if (rawValue !== undefined) {
                 // Only store if attribute exists and no processValue function
-                elementInfo.customData[reader.outputKey] = rawValue;
+                interactiveElementInfo.customData[reader.outputKey] = rawValue;
               }
             } catch (e: any) {
               console.warn(
                 `Error processing custom attribute "${reader.attributeName}" for element "${elementId}" with key "${reader.outputKey}": ${e.message}`
               );
-              elementInfo.customData[reader.outputKey] =
+              interactiveElementInfo.customData[reader.outputKey] =
                 "ERROR_PROCESSING_ATTRIBUTE";
             }
           }
         }
 
         let logMessage = `  - ID: ${elementId}, Type: ${elementType}, Label: "${label}"`;
-        if (elementInfo.purpose)
-          logMessage += `, Purpose: "${elementInfo.purpose}"`;
-        if (elementInfo.group) logMessage += `, Group: "${elementInfo.group}"`;
+        if (interactiveElementInfo.purpose)
+          logMessage += `, Purpose: "${interactiveElementInfo.purpose}"`;
+        if (interactiveElementInfo.group)
+          logMessage += `, Group: "${interactiveElementInfo.group}"`;
         if (isChecked !== undefined) logMessage += `, Checked: ${isChecked}`;
         if (currentValue !== undefined)
           logMessage += `, Value: "${currentValue}"`;
         if (radioName !== undefined && elementType === "input-radio")
           logMessage += `, RadioGroup: "${radioName}"`;
-        if (elementInfo.options) {
+        if (interactiveElementInfo.options) {
           logMessage += `, Options: ${JSON.stringify(
-            elementInfo.options.map((o) => ({
+            interactiveElementInfo.options.map((o) => ({
               value: o.value,
               text: o.text,
               selected: o.selected,
@@ -346,26 +427,41 @@ export class DomParser {
         }
         if (isDisabled) logMessage += `, Disabled: true`;
         if (isReadOnly) logMessage += `, ReadOnly: true`;
-        if (elementInfo.controls)
-          logMessage += `, Controls: "${elementInfo.controls}"`;
-        if (elementInfo.updatesContainer)
-          logMessage += `, Updates: "${elementInfo.updatesContainer}"`;
-        if (elementInfo.navigatesTo)
-          logMessage += `, NavigatesTo: "${elementInfo.navigatesTo}"`;
-        if (elementInfo.customState)
-          logMessage += `, State: "${elementInfo.customState}"`;
+        if (interactiveElementInfo.controls)
+          logMessage += `, Controls: "${interactiveElementInfo.controls}"`;
+        if (interactiveElementInfo.updatesContainer)
+          logMessage += `, Updates: "${interactiveElementInfo.updatesContainer}"`;
+        if (interactiveElementInfo.navigatesTo)
+          logMessage += `, NavigatesTo: "${interactiveElementInfo.navigatesTo}"`;
+        if (interactiveElementInfo.customState)
+          logMessage += `, State: "${interactiveElementInfo.customState}"`;
         if (
-          elementInfo.customData &&
-          Object.keys(elementInfo.customData).length > 0
+          interactiveElementInfo.customData &&
+          Object.keys(interactiveElementInfo.customData).length > 0
         ) {
           logMessage += `, CustomData: ${JSON.stringify(
-            elementInfo.customData
+            interactiveElementInfo.customData
           )}`;
         }
+
         console.log(logMessage);
 
-        foundElements.push(elementInfo);
+        foundElements.push(interactiveElementInfo);
       }
+
+      // Check if scrolling is possible
+      const scrollable = await this.isScrollable();
+      const atBottom = await this.isAtBottom();
+      if (scrollable && !atBottom) {
+        console.log(
+          "More elements are available beyond the current viewport. Scrolling is possible."
+        );
+      } else if (atBottom) {
+        console.log(
+          "Reached the bottom of the page. No more scrolling possible."
+        );
+      }
+
       const successMessage = `Successfully parsed ${foundElements.length} interactive elements with state.`;
       return { success: true, message: successMessage, data: foundElements };
     } catch (error: any) {
@@ -449,12 +545,34 @@ export class DomParser {
       console.log(`Found ${containerCount} display container(s).`);
 
       const foundContainers: DisplayContainerInfo[] = [];
+      const maxElementsToCheck = Math.min(containerCount, 20); // Apply same limit
 
-      for (let i = 0; i < containerCount; i++) {
+      console.log(
+        `Processing first ${maxElementsToCheck} containers for viewport visibility...`
+      );
+
+      for (let i = 0; i < maxElementsToCheck; i++) {
         const containerElementHandle = await containerLocator
           .nth(i)
           .elementHandle();
         if (!containerElementHandle) continue;
+
+        // Quick viewport check using bounding box
+        const boundingBox = await containerElementHandle.boundingBox();
+        if (!boundingBox) continue;
+
+        const viewport = await this.page?.viewportSize();
+        if (!viewport) continue;
+
+        // Skip if element is completely outside viewport
+        if (
+          boundingBox.y + boundingBox.height < 0 ||
+          boundingBox.y > viewport.height ||
+          boundingBox.x + boundingBox.width < 0 ||
+          boundingBox.x > viewport.width
+        ) {
+          continue;
+        }
 
         const containerId = await this.getElementAttribute(
           containerElementHandle,
@@ -490,7 +608,9 @@ export class DomParser {
         );
 
         const items: DisplayItem[] = [];
-        for (let j = 0; j < itemCount; j++) {
+        // Also limit items processing
+        const maxItemsToCheck = Math.min(itemCount, 10);
+        for (let j = 0; j < maxItemsToCheck; j++) {
           const itemElementHandle = await itemsLocator.nth(j).elementHandle();
           if (!itemElementHandle) continue;
 
@@ -570,32 +690,74 @@ export class DomParser {
       );
       const count = await regionLocator.count();
       console.log(`Found ${count} page region(s).`);
+
       const foundRegions: PageRegionInfo[] = [];
+      const maxElementsToCheck = Math.min(count, 20); // Apply same limit as interactive elements
 
-      for (let i = 0; i < count; i++) {
-        const elementHandle = await regionLocator.nth(i).elementHandle();
-        if (!elementHandle) continue;
+      console.log(
+        `Processing first ${maxElementsToCheck} regions for viewport visibility...`
+      );
 
-        const regionId = await this.getElementAttribute(
-          elementHandle,
-          DataAttributes.REGION
-        );
-        if (!regionId) {
-          console.warn(
-            "Found an element with data-mcp-region attribute but no value. Skipping."
-          );
+      for (let i = 0; i < maxElementsToCheck; i++) {
+        const regionHandle = await regionLocator.nth(i).elementHandle();
+        if (!regionHandle) continue;
+
+        // Check if region itself is in viewport first
+        if (!(await this.isElementInViewport(regionHandle))) {
           continue;
         }
-        const label = await this.getElementLabel(elementHandle, regionId); // Use getElementLabel for consistency
-        const purpose = await this.getElementAttribute(
-          elementHandle,
+
+        const regionId = await this.getElementAttribute(
+          regionHandle,
+          DataAttributes.REGION
+        );
+
+        if (!regionId) {
+          continue;
+        }
+
+        const regionLabel = await this.getElementAttribute(
+          regionHandle,
+          "aria-label"
+        );
+        const regionPurpose = await this.getElementAttribute(
+          regionHandle,
           DataAttributes.PURPOSE
         );
 
-        foundRegions.push({ regionId, label, purpose });
+        // Simplified text content extraction with better error handling
+        let visibleTextContent = "";
+        try {
+          const rawTextContent = await regionHandle.textContent();
+          if (rawTextContent) {
+            // If text is very long, truncate it for performance
+            if (rawTextContent.length > 500) {
+              visibleTextContent =
+                rawTextContent.substring(0, 500) +
+                "... [content truncated for performance]";
+            } else {
+              visibleTextContent = rawTextContent;
+            }
+          }
+        } catch (error) {
+          console.warn(
+            `Error extracting text content for region ${regionId}:`,
+            error
+          );
+          visibleTextContent = "";
+        }
+
+        // Use regionLabel first, then visibleTextContent, then regionId as fallback
+        const finalLabel = regionLabel || visibleTextContent || regionId;
+
+        foundRegions.push({
+          regionId: regionId,
+          label: finalLabel,
+          purpose: regionPurpose,
+        });
         console.log(
-          `  - Region ID: "${regionId}", Label: "${label}"${
-            purpose ? `, Purpose: "${purpose}"` : ""
+          `  - Region ID: "${regionId}", Label: "${finalLabel}"${
+            regionPurpose ? `, Purpose: "${regionPurpose}"` : ""
           }`
         );
       }
