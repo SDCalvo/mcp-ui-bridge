@@ -3,20 +3,19 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mcp-ui-bridge-python"
-version = "0.1.0"
-description = "A Python tool to bridge LLMs with web UIs via MCP."
+name = "mcp-ui-bridge"
+version = "0.1.1"
+description = "A Python MCP server to bridge LLMs with web UIs via Playwright automation"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT License"}
+license = "MIT"
 authors = [
-  {name = "Your Name", email = "your.email@example.com"},
+  {name = "Santiago Calvo", email = "santiago@example.com"},
 ]
-keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge"]
+keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge", "model-context-protocol", "web-automation"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -25,19 +24,33 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Software Development :: Testing",
 ]
 
 dependencies = [
-    "playwright~=1.40",  # Using a recent version, can be updated
-    "fastmcp~=2.5",    # Assuming a version, replace with actual if known
-    "pydantic~=2.0",
-    "typer~=0.9",
-    "rich>=13.0.0", # Explicitly add rich
+    "playwright>=1.40.0",
+    "fastmcp>=2.5.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "fastapi>=0.104.0",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/your-username/mcp-ui-bridge-python" # Placeholder
-"Bug Tracker" = "https://github.com/your-username/mcp-ui-bridge-python/issues" # Placeholder
+"Homepage" = "https://github.com/your-username/mcp-ui-bridge"
+"Repository" = "https://github.com/your-username/mcp-ui-bridge"
+"Bug Tracker" = "https://github.com/your-username/mcp-ui-bridge/issues"
+"Documentation" = "https://github.com/your-username/mcp-ui-bridge#readme"
 
-[project.scripts]
-# mcp-ui-bridge = "mcp_ui_bridge_python.main:app" # Example if using Typer and main:app 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.0",
+]
+
+# Uncomment if you want to provide a CLI tool
+# [project.scripts]
+# mcp-ui-bridge = "mcp_ui_bridge_python.main:app" 

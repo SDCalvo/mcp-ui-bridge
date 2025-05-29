@@ -4,6 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+python-dotenv = "*"
+pydantic = "*"
 
 [dev-packages]
 
