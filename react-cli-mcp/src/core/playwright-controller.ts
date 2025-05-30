@@ -906,6 +906,134 @@ export class PlaywrightController {
       };
     }
   }
+
+  async getElementsPage(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message = "Get elements page failed: Page is not initialized.";
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    try {
+      const domParser = new (await import("./dom-parser.js")).DomParser(
+        this.page,
+        this.customAttributeReaders
+      );
+      const result = await domParser.getInteractiveElementsWithState(
+        startIndex,
+        pageSize
+      );
+
+      if (result.success) {
+        const message = `Successfully retrieved elements page ${result.data?.pagination.currentPage}/${result.data?.pagination.totalPages}.`;
+        return { success: true, message, data: result.data };
+      } else {
+        return {
+          success: false,
+          message: result.message,
+          errorType: PlaywrightErrorType.ActionFailed,
+        };
+      }
+    } catch (error: any) {
+      const errMessage = "Failed to get elements page.";
+      console.error(errMessage, error);
+      return {
+        success: false,
+        message: `${errMessage} Error: ${error.message}`,
+        errorType: PlaywrightErrorType.ActionFailed,
+      };
+    }
+  }
+
+  async getNextElementsPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    const nextStartIndex = currentStartIndex + pageSize;
+    return this.getElementsPage(nextStartIndex, pageSize);
+  }
+
+  async getPreviousElementsPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    const previousStartIndex = Math.max(0, currentStartIndex - pageSize);
+    return this.getElementsPage(previousStartIndex, pageSize);
+  }
+
+  async getFirstElementsPage(pageSize: number = 20): Promise<ActionResult> {
+    return this.getElementsPage(0, pageSize);
+  }
+
+  async getStructuredDataPage(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    if (!this.page) {
+      const message =
+        "Get structured data page failed: Page is not initialized.";
+      console.error(message);
+      return {
+        success: false,
+        message,
+        errorType: PlaywrightErrorType.PageNotAvailable,
+      };
+    }
+    try {
+      const domParser = new (await import("./dom-parser.js")).DomParser(
+        this.page,
+        this.customAttributeReaders
+      );
+      const result = await domParser.getStructuredData(startIndex, pageSize);
+
+      if (result.success) {
+        const message = `Successfully retrieved structured data page.`;
+        return { success: true, message, data: result.data };
+      } else {
+        return {
+          success: false,
+          message: result.message,
+          errorType: PlaywrightErrorType.ActionFailed,
+        };
+      }
+    } catch (error: any) {
+      const errMessage = "Failed to get structured data page.";
+      console.error(errMessage, error);
+      return {
+        success: false,
+        message: `${errMessage} Error: ${error.message}`,
+        errorType: PlaywrightErrorType.ActionFailed,
+      };
+    }
+  }
+
+  async getNextStructuredDataPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    const nextStartIndex = currentStartIndex + pageSize;
+    return this.getStructuredDataPage(nextStartIndex, pageSize);
+  }
+
+  async getPreviousStructuredDataPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    const previousStartIndex = Math.max(0, currentStartIndex - pageSize);
+    return this.getStructuredDataPage(previousStartIndex, pageSize);
+  }
+
+  async getFirstStructuredDataPage(
+    pageSize: number = 20
+  ): Promise<ActionResult> {
+    return this.getStructuredDataPage(0, pageSize);
+  }
 }
 
 // --- Implementation of AutomationInterface for Custom Action Handlers ---

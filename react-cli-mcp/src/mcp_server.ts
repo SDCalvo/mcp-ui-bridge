@@ -147,9 +147,14 @@ function addCoreTools(mcpServer: FastMCP<any>) {
   mcpServer.addTool({
     name: "get_current_screen_data",
     description:
-      "Gets the current structured data and interactive elements displayed on the screen.",
-    parameters: undefined,
-    execute: async () => {
+      "Gets the current structured data and interactive elements displayed on the screen. Supports pagination for both interactive elements and structured data.",
+    parameters: z.object({
+      interactive_start_index: z.number().optional().default(0),
+      interactive_page_size: z.number().optional().default(20),
+      structured_start_index: z.number().optional().default(0),
+      structured_page_size: z.number().optional().default(20),
+    }),
+    execute: async (args) => {
       if (
         !domParser ||
         !playwrightController ||
@@ -174,9 +179,15 @@ function addCoreTools(mcpServer: FastMCP<any>) {
           });
         }
 
-        const structuredDataResult = await domParser.getStructuredData();
+        const structuredDataResult = await domParser.getStructuredData(
+          args.structured_start_index,
+          args.structured_page_size
+        );
         const interactiveElementsResult =
-          await domParser.getInteractiveElementsWithState();
+          await domParser.getInteractiveElementsWithState(
+            args.interactive_start_index,
+            args.interactive_page_size
+          );
 
         return JSON.stringify({
           success: true,
@@ -187,8 +198,36 @@ function addCoreTools(mcpServer: FastMCP<any>) {
               regions: [],
               statusMessages: [],
               loadingIndicators: [],
+              pagination: {
+                containers: {
+                  totalElements: 0,
+                  currentPage: 1,
+                  totalPages: 0,
+                  hasMore: false,
+                },
+                regions: {
+                  totalElements: 0,
+                  currentPage: 1,
+                  totalPages: 0,
+                  hasMore: false,
+                },
+                statusMessages: {
+                  totalElements: 0,
+                  currentPage: 1,
+                  totalPages: 0,
+                  hasMore: false,
+                },
+                loadingIndicators: {
+                  totalElements: 0,
+                  currentPage: 1,
+                  totalPages: 0,
+                  hasMore: false,
+                },
+              },
             },
-            interactiveElements: interactiveElementsResult.data || [],
+            interactiveElements: interactiveElementsResult.data?.elements || [],
+            pagination: interactiveElementsResult.data?.pagination,
+            scrollInfo: interactiveElementsResult.data?.scrollInfo,
           },
           parserMessages: {
             structured: structuredDataResult.message,
@@ -261,7 +300,7 @@ function addCoreTools(mcpServer: FastMCP<any>) {
           });
         }
 
-        const actions = interactiveElementsResult.data.flatMap(
+        const actions = interactiveElementsResult.data.elements.flatMap(
           (el: InteractiveElementInfo) => {
             const generatedActions: any[] = [];
 
@@ -398,7 +437,7 @@ function addSendCommandTool(mcpServer: FastMCP<any>) {
   mcpServer.addTool({
     name: "send_command",
     description:
-      'Sends a command to interact with an element on the screen. Supported commands: click #elementId, type #elementId "text to type", select #elementId "valueToSelect", check #elementId, uncheck #elementId, choose #elementId [in_group groupName], scroll-up, scroll-down.',
+      'Sends a command to interact with an element on the screen. Supported commands: click #elementId, type #elementId "text to type", select #elementId "valueToSelect", check #elementId, uncheck #elementId, choose #elementId [in_group groupName], scroll-up, scroll-down, next-page [currentStartIndex], prev-page [currentStartIndex], first-page [pageSize], next-structured-page [currentStartIndex], prev-structured-page [currentStartIndex], first-structured-page [pageSize]. Pagination commands navigate through elements in the current viewport without scrolling. Structured pagination commands navigate through display containers, regions, status messages, and loading indicators. Use pagination when you need to see more elements that are already visible but not all shown at once.',
     parameters: z.object({
       command_string: z.string(),
     }),
@@ -602,6 +641,90 @@ function addSendCommandTool(mcpServer: FastMCP<any>) {
       } else if (commandName === "scroll-down") {
         console.log(`[mcp_server.ts] Executing core scroll down`);
         result = await playwrightController.scrollPageDown();
+      } else if (commandName === "next-page") {
+        const startIndex =
+          commandArgs.length > 0 ? parseInt(commandArgs[0], 10) : 0;
+        if (isNaN(startIndex)) {
+          result = {
+            success: false,
+            message: "Invalid startIndex provided for next-page command.",
+            errorType: PlaywrightErrorType.InvalidInput,
+          };
+        } else {
+          console.log(
+            `[mcp_server.ts] Executing core next-page from index ${startIndex}`
+          );
+          result = await playwrightController.getNextElementsPage(startIndex);
+        }
+      } else if (commandName === "prev-page") {
+        const startIndex =
+          commandArgs.length > 0 ? parseInt(commandArgs[0], 10) : 20;
+        if (isNaN(startIndex)) {
+          result = {
+            success: false,
+            message: "Invalid startIndex provided for prev-page command.",
+            errorType: PlaywrightErrorType.InvalidInput,
+          };
+        } else {
+          console.log(
+            `[mcp_server.ts] Executing core prev-page from index ${startIndex}`
+          );
+          result = await playwrightController.getPreviousElementsPage(
+            startIndex
+          );
+        }
+      } else if (commandName === "first-page") {
+        const pageSize =
+          commandArgs.length > 0 ? parseInt(commandArgs[0], 10) : 20;
+        console.log(
+          `[mcp_server.ts] Executing core first-page with page size ${pageSize}`
+        );
+        result = await playwrightController.getFirstElementsPage(pageSize);
+      } else if (commandName === "next-structured-page") {
+        const startIndex =
+          commandArgs.length > 0 ? parseInt(commandArgs[0], 10) : 0;
+        if (isNaN(startIndex)) {
+          result = {
+            success: false,
+            message:
+              "Invalid startIndex provided for next-structured-page command.",
+            errorType: PlaywrightErrorType.InvalidInput,
+          };
+        } else {
+          console.log(
+            `[mcp_server.ts] Executing core next-structured-page from index ${startIndex}`
+          );
+          result = await playwrightController.getNextStructuredDataPage(
+            startIndex
+          );
+        }
+      } else if (commandName === "prev-structured-page") {
+        const startIndex =
+          commandArgs.length > 0 ? parseInt(commandArgs[0], 10) : 20;
+        if (isNaN(startIndex)) {
+          result = {
+            success: false,
+            message:
+              "Invalid startIndex provided for prev-structured-page command.",
+            errorType: PlaywrightErrorType.InvalidInput,
+          };
+        } else {
+          console.log(
+            `[mcp_server.ts] Executing core prev-structured-page from index ${startIndex}`
+          );
+          result = await playwrightController.getPreviousStructuredDataPage(
+            startIndex
+          );
+        }
+      } else if (commandName === "first-structured-page") {
+        const pageSize =
+          commandArgs.length > 0 ? parseInt(commandArgs[0], 10) : 20;
+        console.log(
+          `[mcp_server.ts] Executing core first-structured-page with page size ${pageSize}`
+        );
+        result = await playwrightController.getFirstStructuredDataPage(
+          pageSize
+        );
       } else if (!customActionHandlerMap.has(commandName)) {
         // Only if no custom handler was defined at all
         console.warn(`[mcp_server.ts] Unrecognized command: ${commandName}`);

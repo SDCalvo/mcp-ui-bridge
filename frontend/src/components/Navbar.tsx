@@ -69,6 +69,17 @@ const Navbar: React.FC = () => {
                 Profile
               </Link>
             </li>
+            <li className="nav-item">
+              <Link
+                to="/scroll-pagination-test"
+                className="nav-link text-white"
+                data-mcp-interactive-element="nav-link-scroll-pagination-test"
+                data-mcp-element-label="Scroll & Pagination Test"
+                data-mcp-navigates-to="/scroll-pagination-test"
+              >
+                Scroll Test
+              </Link>
+            </li>
           </ul>
         </div>
       </div>

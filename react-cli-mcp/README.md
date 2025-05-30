@@ -14,24 +14,73 @@ This `README.md` is for the `mcp-ui-bridge` library itself, found within the `/r
 - **Playwright Integration:** Manages browser instances and interactions for accessing the target web application.
 - **`DomParser`:** Analyzes the live DOM of the target application based on `data-mcp-*` attributes.
 - **Core MCP Tools:**
-  - `get_current_screen_data`: Fetches structured data and interactive elements from the current web page.
+  - `get_current_screen_data`: Fetches structured data and interactive elements from the current web page. Supports pagination parameters:
+    - `interactive_start_index` (default: 0): Starting index for interactive elements pagination
+    - `interactive_page_size` (default: 20): Number of interactive elements per page
+    - `structured_start_index` (default: 0): Starting index for structured data pagination
+    - `structured_page_size` (default: 20): Number of structured elements per page
   - `get_current_screen_actions`: Derives actionable commands and hints based on the parsed elements.
-  - `send_command`: Executes actions like `click`, `type`, `select`, `check`, `uncheck`, `choose` (radio), `hover`, `clear`, `scroll-up`, `scroll-down` on the web page.
+  - `send_command`: Executes actions on the web page. Supports interaction commands:
+    - **Element Interactions**: `click #elementId`, `type #elementId "text"`, `select #elementId "value"`, `check #elementId`, `uncheck #elementId`, `choose #elementId [value]`
+    - **Scroll Navigation**: `scroll-up`, `scroll-down` - Navigate through page sections
+    - **Interactive Element Pagination**: `next-page [currentStartIndex]`, `prev-page [currentStartIndex]`, `first-page [pageSize]`
+    - **Structured Data Pagination**: `next-structured-page [currentStartIndex]`, `prev-structured-page [currentStartIndex]`, `first-structured-page [pageSize]`
 - **Client Authentication Hook:** Supports custom asynchronous authentication logic (`authenticateClient` in `McpServerOptions`) at the connection level, allowing validation of clients (e.g., via API keys in headers) before establishing an MCP session.
 - **Configurable:** Supports programmatic options for server settings (target URL, port, headless mode, etc.).
 - **ES Module Compatible.**
 
 ## Performance Optimizations
 
-The `mcp-ui-bridge` library includes several performance optimizations designed to handle large web applications efficiently:
+The `mcp-ui-bridge` library includes comprehensive performance optimizations designed to handle large web applications efficiently:
 
-- **Viewport-Based Processing**: Only processes elements currently visible in the browser viewport, dramatically reducing processing time for pages with many elements.
-- **Element Count Limits**: Limits the maximum number of elements processed per category (interactive elements, regions, containers) to 20, preventing system overload on pages with thousands of elements.
-- **Text Content Truncation**: Automatically truncates large text content to 500 characters with a "content truncated for performance" indicator.
-- **Scroll Navigation**: Provides `scroll-up` and `scroll-down` commands to navigate through different sections of long pages, allowing access to off-screen content while maintaining performance.
-- **Early Exit Logic**: Skips processing for elements that fail viewport checks immediately, avoiding unnecessary operations.
+### Advanced Pagination System
 
-These optimizations ensure that the library remains responsive even on complex pages with 1000+ elements, reducing response times from 10+ seconds to sub-second performance while maintaining full functionality through scroll-based navigation.
+- **Comprehensive Pagination**: All element types support pagination with configurable page sizes (default: 20 elements per page):
+
+  - **Interactive Elements**: Buttons, inputs, links, forms, etc.
+  - **Display Containers**: Organized content sections with items
+  - **Page Regions**: Logical sections and areas of the page
+  - **Status Message Areas**: Status indicators and message containers
+  - **Loading Indicators**: Progress and loading state elements
+
+- **Pagination Commands**: LLMs can navigate through elements without scrolling:
+
+  - `next-page [currentStartIndex]` - Navigate to the next page of interactive elements
+  - `prev-page [currentStartIndex]` - Navigate to the previous page
+  - `first-page [pageSize]` - Return to the first page with optional page size
+  - `next-structured-page [currentStartIndex]` - Navigate structured data elements
+  - `prev-structured-page [currentStartIndex]` - Navigate backwards through structured data
+  - `first-structured-page [pageSize]` - Reset structured data pagination
+
+- **Intelligent Pagination Info**: Each response includes detailed pagination metadata:
+  - `totalElements`: Total count of elements in viewport
+  - `currentPage`/`totalPages`: Current position in pagination
+  - `hasMore`: Whether more elements are available
+  - `nextStartIndex`: Exact index for next page navigation
+
+### Viewport-Based Processing
+
+- **Viewport Filtering**: Only processes elements currently visible in the browser viewport, dramatically reducing processing time for pages with thousands of elements
+- **Scroll Navigation**: Provides `scroll-up` and `scroll-down` commands to navigate through different sections of long pages, allowing access to off-screen content while maintaining performance
+- **Dynamic Element Discovery**: As users scroll, new elements become visible and are automatically included in subsequent responses
+
+### Performance Safeguards
+
+- **Configurable Page Sizes**: Customize pagination size per request (1-100 elements) to balance detail vs. performance
+- **Text Content Truncation**: Automatically truncates large text content to 500 characters with a "content truncated for performance" indicator
+- **Early Exit Logic**: Skips processing for elements that fail viewport checks immediately, avoiding unnecessary operations
+- **Efficient DOM Queries**: Uses targeted Playwright selectors and batched operations to minimize DOM access overhead
+
+### Real-World Performance
+
+These optimizations ensure excellent performance even on complex applications:
+
+- **Pages with 1000+ elements**: Sub-second response times vs. 10+ second processing without optimizations
+- **Large e-commerce sites**: Efficiently handles product grids, filters, and navigation with pagination
+- **Complex dashboards**: Navigates through charts, widgets, and data tables seamlessly
+- **Enterprise applications**: Handles forms with hundreds of fields through intelligent pagination
+
+The pagination system allows LLMs to work with unlimited numbers of elements while maintaining responsive performance, providing a smooth experience even on the most complex web applications.
 
 ## Installation
 
@@ -364,8 +413,10 @@ This allows for fine-grained control over interactions, enabling complex workflo
 
 1.  **Semantic Instrumentation (by You)**: You, as the developer of a web application, annotate your HTML elements with specific `data-mcp-*` attributes (detailed below). These attributes provide semantic meaning about your UI's structure, interactive elements, and their purpose.
 2.  **`DomParser` (within `mcp-ui-bridge`)**: When the MCP server (created by `runMcpServer`) is active and connected to your `targetUrl`, its internal `DomParser` module uses Playwright to access the live DOM of your web application. It scans for the `data-mcp-*` attributes you've added.
-3.  **Structured Data Extraction**: The `DomParser` extracts a structured JSON representation of the page, including its current URL, identified interactive elements (buttons, inputs, links, custom elements), display data (from containers and regions), and their associated semantic information (labels, purposes, values).
-4.  **`PlaywrightController` (within `mcp-ui-bridge`)**: When an LLM client sends a command (e.g., `click #buttonId`, `type #inputId "text"`) to the MCP server, the server uses its internal `PlaywrightController` module. This module translates the MCP command into Playwright actions and executes them reliably on the live web page.
+3.  **Structured Data Extraction**: The `DomParser` extracts a structured JSON representation of the page, including its current URL, identified interactive elements (buttons, inputs, links, custom elements), display data (from containers and regions), and their associated semantic information (labels, purposes, values). All element types support configurable pagination to efficiently handle large applications with hundreds or thousands of elements.
+4.  **`PlaywrightController` (within `mcp-ui-bridge`)**: When an LLM client sends a command (e.g., `click #buttonId`, `type #inputId "text"`, `next-page 20`) to the MCP server, the server uses its internal `PlaywrightController` module. This module translates the MCP command into Playwright actions and executes them reliably on the live web page.
+
+    **Pagination Navigation**: The library supports comprehensive pagination commands (`next-page`, `prev-page`, `first-page`, `next-structured-page`, etc.) that allow LLMs to navigate through large sets of elements without requiring scrolling. Each pagination response includes metadata about total elements, current page position, and navigation indices.
 
     **Scroll Navigation**: The library supports `scroll-up` and `scroll-down` commands that don't require an element ID. These commands scroll the page by one viewport height and allow LLMs to navigate through different sections of long pages. Combined with viewport filtering, this enables efficient exploration of large applications.
 

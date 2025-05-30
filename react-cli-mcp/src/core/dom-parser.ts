@@ -153,8 +153,27 @@ export class DomParser {
     await this.page?.evaluate(() => window.scrollBy(0, -window.innerHeight));
   }
 
-  async getInteractiveElementsWithState(): Promise<
-    ParserResult<InteractiveElementInfo[]>
+  async getInteractiveElementsWithState(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: InteractiveElementInfo[];
+      pagination: {
+        totalInViewport: number;
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+      scrollInfo: {
+        canScrollDown: boolean;
+        canScrollUp: boolean;
+        isAtTop: boolean;
+        isAtBottom: boolean;
+      };
+    }>
   > {
     if (!this.page) {
       const message =
@@ -168,23 +187,27 @@ export class DomParser {
       };
     }
 
-    console.log("Scanning for interactive elements with state...");
+    console.log(
+      `Scanning for interactive elements with state (page ${
+        Math.floor(startIndex / pageSize) + 1
+      })...`
+    );
     try {
       const elementsLocator: Locator = this.page.locator(
         `[${DataAttributes.INTERACTIVE_ELEMENT}]`
       );
-      const count = await elementsLocator.count();
-      console.log(`Found ${count} interactive element(s) with state.`);
-
-      const foundElements: InteractiveElementInfo[] = [];
-      const maxElementsToCheck = Math.min(count, 20); // Much more aggressive limit
-      let processedCount = 0;
-
+      const totalElements = await elementsLocator.count();
       console.log(
-        `Processing first ${maxElementsToCheck} elements for viewport visibility...`
+        `Found ${totalElements} total interactive element(s) with state.`
       );
 
-      for (let i = 0; i < maxElementsToCheck; i++) {
+      // First, identify which elements are in viewport
+      const elementsInViewport: number[] = [];
+      const elementsOutsideViewport: number[] = [];
+
+      console.log("Analyzing viewport visibility for all elements...");
+
+      for (let i = 0; i < totalElements; i++) {
         const elementHandle = await elementsLocator.nth(i).elementHandle();
         if (!elementHandle) {
           continue;
@@ -197,17 +220,49 @@ export class DomParser {
         const viewport = await this.page?.viewportSize();
         if (!viewport) continue;
 
-        // Skip if element is completely outside viewport
+        // Check if element is in viewport
         if (
-          boundingBox.y + boundingBox.height < 0 ||
-          boundingBox.y > viewport.height ||
-          boundingBox.x + boundingBox.width < 0 ||
-          boundingBox.x > viewport.width
+          boundingBox.x < viewport.width &&
+          boundingBox.y < viewport.height &&
+          boundingBox.x + boundingBox.width > 0 &&
+          boundingBox.y + boundingBox.height > 0
         ) {
+          elementsInViewport.push(i);
+        } else {
+          elementsOutsideViewport.push(i);
+        }
+      }
+
+      const totalInViewport = elementsInViewport.length;
+      console.log(
+        `Found ${totalInViewport} elements in viewport, ${elementsOutsideViewport.length} outside viewport.`
+      );
+
+      // Calculate pagination for viewport elements
+      const totalPages = Math.ceil(totalInViewport / pageSize);
+      const currentPage = Math.floor(startIndex / pageSize) + 1;
+      const endIndex = Math.min(startIndex + pageSize, totalInViewport);
+      const hasMore = endIndex < totalInViewport;
+      const nextStartIndex = hasMore ? endIndex : undefined;
+
+      // Get the slice of viewport elements for current page
+      const elementsToProcess = elementsInViewport.slice(startIndex, endIndex);
+
+      console.log(
+        `Processing viewport elements ${
+          startIndex + 1
+        }-${endIndex} of ${totalInViewport} (page ${currentPage}/${totalPages})`
+      );
+
+      const foundElements: InteractiveElementInfo[] = [];
+
+      for (const elementIndex of elementsToProcess) {
+        const elementHandle = await elementsLocator
+          .nth(elementIndex)
+          .elementHandle();
+        if (!elementHandle) {
           continue;
         }
-
-        processedCount++;
 
         const elementId = await this.getElementAttribute(
           elementHandle,
@@ -449,21 +504,58 @@ export class DomParser {
         foundElements.push(interactiveElementInfo);
       }
 
-      // Check if scrolling is possible
-      const scrollable = await this.isScrollable();
-      const atBottom = await this.isAtBottom();
-      if (scrollable && !atBottom) {
+      // Check scroll capabilities
+      const canScrollDown =
+        (await this.isScrollable()) && !(await this.isAtBottom());
+      const canScrollUp = (await this.page?.evaluate(() => window.scrollY)) > 0;
+      const isAtTop = (await this.page?.evaluate(() => window.scrollY)) === 0;
+      const isAtBottom = await this.isAtBottom();
+
+      // Provide helpful context about navigation options
+      if (hasMore) {
         console.log(
-          "More elements are available beyond the current viewport. Scrolling is possible."
-        );
-      } else if (atBottom) {
-        console.log(
-          "Reached the bottom of the page. No more scrolling possible."
+          `More elements available in current viewport. Use pagination to see elements ${
+            endIndex + 1
+          }-${Math.min(startIndex + pageSize * 2, totalInViewport)}.`
         );
       }
 
-      const successMessage = `Successfully parsed ${foundElements.length} interactive elements with state.`;
-      return { success: true, message: successMessage, data: foundElements };
+      if (elementsOutsideViewport.length > 0) {
+        if (canScrollDown) {
+          console.log(
+            `${elementsOutsideViewport.length} elements are outside the current viewport. Scrolling down may reveal more elements.`
+          );
+        }
+        if (canScrollUp) {
+          console.log(
+            "Scrolling up may reveal elements above the current viewport."
+          );
+        }
+      }
+
+      const successMessage = `Successfully parsed ${foundElements.length} interactive elements (page ${currentPage}/${totalPages} of viewport elements).`;
+
+      return {
+        success: true,
+        message: successMessage,
+        data: {
+          elements: foundElements,
+          pagination: {
+            totalInViewport,
+            totalElements,
+            currentPage,
+            totalPages,
+            hasMore,
+            nextStartIndex,
+          },
+          scrollInfo: {
+            canScrollDown,
+            canScrollUp,
+            isAtTop,
+            isAtBottom,
+          },
+        },
+      };
     } catch (error: any) {
       const errorMessage =
         "An error occurred while parsing interactive elements with state.";
@@ -477,12 +569,45 @@ export class DomParser {
     }
   }
 
-  async getStructuredData(): Promise<
+  async getStructuredData(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<
     ParserResult<{
       containers: DisplayContainerInfo[];
       regions: PageRegionInfo[];
       statusMessages: StatusMessageAreaInfo[];
       loadingIndicators: LoadingIndicatorInfo[];
+      pagination: {
+        containers: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        regions: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        statusMessages: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        loadingIndicators: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+      };
     }>
   > {
     if (!this.page) {
@@ -496,19 +621,60 @@ export class DomParser {
         data: undefined,
       };
     }
-    console.log("Scanning for all structured data elements...");
+    console.log(
+      `Scanning for structured data elements (page ${
+        Math.floor(startIndex / pageSize) + 1
+      })...`
+    );
     try {
-      const containersResult = await this.findDisplayContainersInternal();
-      const regionsResult = await this.findPageRegionsInternal();
-      const statusMessagesResult = await this.findStatusMessageAreasInternal();
-      const loadingIndicatorsResult =
-        await this.findLoadingIndicatorsInternal();
+      const containersResult = await this.findDisplayContainersInternal(
+        startIndex,
+        pageSize
+      );
+      const regionsResult = await this.findPageRegionsInternal(
+        startIndex,
+        pageSize
+      );
+      const statusMessagesResult = await this.findStatusMessageAreasInternal(
+        startIndex,
+        pageSize
+      );
+      const loadingIndicatorsResult = await this.findLoadingIndicatorsInternal(
+        startIndex,
+        pageSize
+      );
 
       const structuredData = {
-        containers: containersResult.data || [],
-        regions: regionsResult.data || [],
-        statusMessages: statusMessagesResult.data || [],
-        loadingIndicators: loadingIndicatorsResult.data || [],
+        containers: containersResult.data?.elements || [],
+        regions: regionsResult.data?.elements || [],
+        statusMessages: statusMessagesResult.data?.elements || [],
+        loadingIndicators: loadingIndicatorsResult.data?.elements || [],
+        pagination: {
+          containers: containersResult.data?.pagination || {
+            totalElements: 0,
+            currentPage: 1,
+            totalPages: 0,
+            hasMore: false,
+          },
+          regions: regionsResult.data?.pagination || {
+            totalElements: 0,
+            currentPage: 1,
+            totalPages: 0,
+            hasMore: false,
+          },
+          statusMessages: statusMessagesResult.data?.pagination || {
+            totalElements: 0,
+            currentPage: 1,
+            totalPages: 0,
+            hasMore: false,
+          },
+          loadingIndicators: loadingIndicatorsResult.data?.pagination || {
+            totalElements: 0,
+            currentPage: 1,
+            totalPages: 0,
+            hasMore: false,
+          },
+        },
       };
 
       const message = "Successfully retrieved all structured data.";
@@ -525,8 +691,20 @@ export class DomParser {
     }
   }
 
-  private async findDisplayContainersInternal(): Promise<
-    ParserResult<DisplayContainerInfo[]>
+  private async findDisplayContainersInternal(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: DisplayContainerInfo[];
+      pagination: {
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+    }>
   > {
     if (!this.page) {
       return {
@@ -541,17 +719,25 @@ export class DomParser {
       const containerLocator: Locator = this.page.locator(
         `[${DataAttributes.DISPLAY_CONTAINER}]` // Use the constant
       );
-      const containerCount = await containerLocator.count();
-      console.log(`Found ${containerCount} display container(s).`);
+      const totalElements = await containerLocator.count();
+      console.log(`Found ${totalElements} display container(s).`);
+
+      // Calculate pagination
+      const totalPages = Math.ceil(totalElements / pageSize);
+      const currentPage = Math.floor(startIndex / pageSize) + 1;
+      const endIndex = Math.min(startIndex + pageSize, totalElements);
+      const hasMore = endIndex < totalElements;
+      const nextStartIndex = hasMore ? endIndex : undefined;
 
       const foundContainers: DisplayContainerInfo[] = [];
-      const maxElementsToCheck = Math.min(containerCount, 20); // Apply same limit
 
       console.log(
-        `Processing first ${maxElementsToCheck} containers for viewport visibility...`
+        `Processing display containers ${
+          startIndex + 1
+        }-${endIndex} of ${totalElements} (page ${currentPage}/${totalPages})...`
       );
 
-      for (let i = 0; i < maxElementsToCheck; i++) {
+      for (let i = startIndex; i < endIndex; i++) {
         const containerElementHandle = await containerLocator
           .nth(i)
           .elementHandle();
@@ -657,8 +843,22 @@ export class DomParser {
         }
         foundContainers.push({ containerId, items, region, purpose });
       }
-      const successMessage = `Successfully parsed ${foundContainers.length} display containers.`;
-      return { success: true, message: successMessage, data: foundContainers };
+
+      const successMessage = `Successfully parsed ${foundContainers.length} display containers (page ${currentPage}/${totalPages}).`;
+      return {
+        success: true,
+        message: successMessage,
+        data: {
+          elements: foundContainers,
+          pagination: {
+            totalElements,
+            currentPage,
+            totalPages,
+            hasMore,
+            nextStartIndex,
+          },
+        },
+      };
     } catch (error: any) {
       const errorMessage =
         "An error occurred while parsing display containers.";
@@ -672,8 +872,20 @@ export class DomParser {
     }
   }
 
-  private async findPageRegionsInternal(): Promise<
-    ParserResult<PageRegionInfo[]>
+  private async findPageRegionsInternal(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: PageRegionInfo[];
+      pagination: {
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+    }>
   > {
     if (!this.page) {
       return {
@@ -688,17 +900,25 @@ export class DomParser {
       const regionLocator: Locator = this.page.locator(
         `[${DataAttributes.REGION}]`
       );
-      const count = await regionLocator.count();
-      console.log(`Found ${count} page region(s).`);
+      const totalElements = await regionLocator.count();
+      console.log(`Found ${totalElements} page region(s).`);
+
+      // Calculate pagination
+      const totalPages = Math.ceil(totalElements / pageSize);
+      const currentPage = Math.floor(startIndex / pageSize) + 1;
+      const endIndex = Math.min(startIndex + pageSize, totalElements);
+      const hasMore = endIndex < totalElements;
+      const nextStartIndex = hasMore ? endIndex : undefined;
 
       const foundRegions: PageRegionInfo[] = [];
-      const maxElementsToCheck = Math.min(count, 20); // Apply same limit as interactive elements
 
       console.log(
-        `Processing first ${maxElementsToCheck} regions for viewport visibility...`
+        `Processing page regions ${
+          startIndex + 1
+        }-${endIndex} of ${totalElements} (page ${currentPage}/${totalPages})...`
       );
 
-      for (let i = 0; i < maxElementsToCheck; i++) {
+      for (let i = startIndex; i < endIndex; i++) {
         const regionHandle = await regionLocator.nth(i).elementHandle();
         if (!regionHandle) continue;
 
@@ -761,8 +981,22 @@ export class DomParser {
           }`
         );
       }
-      const successMessage = `Successfully parsed ${foundRegions.length} page regions.`;
-      return { success: true, message: successMessage, data: foundRegions };
+
+      const successMessage = `Successfully parsed ${foundRegions.length} page regions (page ${currentPage}/${totalPages}).`;
+      return {
+        success: true,
+        message: successMessage,
+        data: {
+          elements: foundRegions,
+          pagination: {
+            totalElements,
+            currentPage,
+            totalPages,
+            hasMore,
+            nextStartIndex,
+          },
+        },
+      };
     } catch (error: any) {
       const errorMessage = "An error occurred while parsing page regions.";
       console.error(errorMessage, error);
@@ -775,8 +1009,20 @@ export class DomParser {
     }
   }
 
-  private async findStatusMessageAreasInternal(): Promise<
-    ParserResult<StatusMessageAreaInfo[]>
+  private async findStatusMessageAreasInternal(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: StatusMessageAreaInfo[];
+      pagination: {
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+    }>
   > {
     if (!this.page) {
       return {
@@ -791,11 +1037,25 @@ export class DomParser {
       const areaLocator: Locator = this.page.locator(
         `[${DataAttributes.STATUS_MESSAGE_CONTAINER}]`
       );
-      const count = await areaLocator.count();
-      console.log(`Found ${count} status message area(s).`);
+      const totalElements = await areaLocator.count();
+      console.log(`Found ${totalElements} status message area(s).`);
+
+      // Calculate pagination
+      const totalPages = Math.ceil(totalElements / pageSize);
+      const currentPage = Math.floor(startIndex / pageSize) + 1;
+      const endIndex = Math.min(startIndex + pageSize, totalElements);
+      const hasMore = endIndex < totalElements;
+      const nextStartIndex = hasMore ? endIndex : undefined;
+
       const foundAreas: StatusMessageAreaInfo[] = [];
 
-      for (let i = 0; i < count; i++) {
+      console.log(
+        `Processing status message areas ${
+          startIndex + 1
+        }-${endIndex} of ${totalElements} (page ${currentPage}/${totalPages})...`
+      );
+
+      for (let i = startIndex; i < endIndex; i++) {
         const elementHandle = await areaLocator.nth(i).elementHandle();
         if (!elementHandle) continue;
 
@@ -827,8 +1087,22 @@ export class DomParser {
           )}${purpose ? `, Purpose: "${purpose}"` : ""}`
         );
       }
-      const successMessage = `Successfully parsed ${foundAreas.length} status message areas.`;
-      return { success: true, message: successMessage, data: foundAreas };
+
+      const successMessage = `Successfully parsed ${foundAreas.length} status message areas (page ${currentPage}/${totalPages}).`;
+      return {
+        success: true,
+        message: successMessage,
+        data: {
+          elements: foundAreas,
+          pagination: {
+            totalElements,
+            currentPage,
+            totalPages,
+            hasMore,
+            nextStartIndex,
+          },
+        },
+      };
     } catch (error: any) {
       const errorMessage =
         "An error occurred while parsing status message areas.";
@@ -842,8 +1116,20 @@ export class DomParser {
     }
   }
 
-  private async findLoadingIndicatorsInternal(): Promise<
-    ParserResult<LoadingIndicatorInfo[]>
+  private async findLoadingIndicatorsInternal(
+    startIndex: number = 0,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: LoadingIndicatorInfo[];
+      pagination: {
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+    }>
   > {
     if (!this.page) {
       return {
@@ -858,11 +1144,25 @@ export class DomParser {
       const indicatorLocator: Locator = this.page.locator(
         `[${DataAttributes.LOADING_INDICATOR_FOR}]`
       );
-      const count = await indicatorLocator.count();
-      console.log(`Found ${count} loading indicator(s).`);
+      const totalElements = await indicatorLocator.count();
+      console.log(`Found ${totalElements} loading indicator(s).`);
+
+      // Calculate pagination
+      const totalPages = Math.ceil(totalElements / pageSize);
+      const currentPage = Math.floor(startIndex / pageSize) + 1;
+      const endIndex = Math.min(startIndex + pageSize, totalElements);
+      const hasMore = endIndex < totalElements;
+      const nextStartIndex = hasMore ? endIndex : undefined;
+
       const foundIndicators: LoadingIndicatorInfo[] = [];
 
-      for (let i = 0; i < count; i++) {
+      console.log(
+        `Processing loading indicators ${
+          startIndex + 1
+        }-${endIndex} of ${totalElements} (page ${currentPage}/${totalPages})...`
+      );
+
+      for (let i = startIndex; i < endIndex; i++) {
         const elementHandle = await indicatorLocator.nth(i).elementHandle();
         if (!elementHandle) continue;
 
@@ -905,8 +1205,22 @@ export class DomParser {
           }`
         );
       }
-      const successMessage = `Successfully parsed ${foundIndicators.length} loading indicators.`;
-      return { success: true, message: successMessage, data: foundIndicators };
+
+      const successMessage = `Successfully parsed ${foundIndicators.length} loading indicators (page ${currentPage}/${totalPages}).`;
+      return {
+        success: true,
+        message: successMessage,
+        data: {
+          elements: foundIndicators,
+          pagination: {
+            totalElements,
+            currentPage,
+            totalPages,
+            hasMore,
+            nextStartIndex,
+          },
+        },
+      };
     } catch (error: any) {
       const errorMessage =
         "An error occurred while parsing loading indicators.";
@@ -922,4 +1236,210 @@ export class DomParser {
 
   // Future method for display elements
   // async findDisplayElements() { ... }
+
+  async getNextElementsPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: InteractiveElementInfo[];
+      pagination: {
+        totalInViewport: number;
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+      scrollInfo: {
+        canScrollDown: boolean;
+        canScrollUp: boolean;
+        isAtTop: boolean;
+        isAtBottom: boolean;
+      };
+    }>
+  > {
+    const nextStartIndex = currentStartIndex + pageSize;
+    return this.getInteractiveElementsWithState(nextStartIndex, pageSize);
+  }
+
+  async getPreviousElementsPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      elements: InteractiveElementInfo[];
+      pagination: {
+        totalInViewport: number;
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+      scrollInfo: {
+        canScrollDown: boolean;
+        canScrollUp: boolean;
+        isAtTop: boolean;
+        isAtBottom: boolean;
+      };
+    }>
+  > {
+    const previousStartIndex = Math.max(0, currentStartIndex - pageSize);
+    return this.getInteractiveElementsWithState(previousStartIndex, pageSize);
+  }
+
+  async getFirstElementsPage(pageSize: number = 20): Promise<
+    ParserResult<{
+      elements: InteractiveElementInfo[];
+      pagination: {
+        totalInViewport: number;
+        totalElements: number;
+        currentPage: number;
+        totalPages: number;
+        hasMore: boolean;
+        nextStartIndex?: number;
+      };
+      scrollInfo: {
+        canScrollDown: boolean;
+        canScrollUp: boolean;
+        isAtTop: boolean;
+        isAtBottom: boolean;
+      };
+    }>
+  > {
+    return this.getInteractiveElementsWithState(0, pageSize);
+  }
+
+  // Structured data pagination methods
+  async getNextStructuredDataPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      containers: DisplayContainerInfo[];
+      regions: PageRegionInfo[];
+      statusMessages: StatusMessageAreaInfo[];
+      loadingIndicators: LoadingIndicatorInfo[];
+      pagination: {
+        containers: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        regions: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        statusMessages: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        loadingIndicators: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+      };
+    }>
+  > {
+    const nextStartIndex = currentStartIndex + pageSize;
+    return this.getStructuredData(nextStartIndex, pageSize);
+  }
+
+  async getPreviousStructuredDataPage(
+    currentStartIndex: number,
+    pageSize: number = 20
+  ): Promise<
+    ParserResult<{
+      containers: DisplayContainerInfo[];
+      regions: PageRegionInfo[];
+      statusMessages: StatusMessageAreaInfo[];
+      loadingIndicators: LoadingIndicatorInfo[];
+      pagination: {
+        containers: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        regions: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        statusMessages: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        loadingIndicators: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+      };
+    }>
+  > {
+    const previousStartIndex = Math.max(0, currentStartIndex - pageSize);
+    return this.getStructuredData(previousStartIndex, pageSize);
+  }
+
+  async getFirstStructuredDataPage(pageSize: number = 20): Promise<
+    ParserResult<{
+      containers: DisplayContainerInfo[];
+      regions: PageRegionInfo[];
+      statusMessages: StatusMessageAreaInfo[];
+      loadingIndicators: LoadingIndicatorInfo[];
+      pagination: {
+        containers: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        regions: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        statusMessages: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+        loadingIndicators: {
+          totalElements: number;
+          currentPage: number;
+          totalPages: number;
+          hasMore: boolean;
+          nextStartIndex?: number;
+        };
+      };
+    }>
+  > {
+    return this.getStructuredData(0, pageSize);
+  }
 }

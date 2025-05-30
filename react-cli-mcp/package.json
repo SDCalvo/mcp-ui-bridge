@@ -1,6 +1,6 @@
 {
   "name": "mcp-ui-bridge",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "type": "module",
   "main": "dist/mcp_server.js",
   "types": "dist/mcp_server.d.ts",
@@ -26,11 +26,13 @@
     "browser automation",
     "accessibility",
     "semantic html",
-    "ui bridge"
+    "ui bridge",
+    "pagination",
+    "viewport filtering"
   ],
   "author": "Santiago Calvo",
   "license": "MIT",
-  "description": "A library to enable LLM interaction with web applications via the Model Context Protocol (MCP) and LLM-Oriented Accessibility principles, using Playwright for browser automation.",
+  "description": "A library to enable LLM interaction with web applications via the Model Context Protocol (MCP) and LLM-Oriented Accessibility principles, using Playwright for browser automation with advanced pagination and viewport filtering.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SDCalvo/mcp-ui-bridge.git"
