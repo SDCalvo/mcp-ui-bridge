@@ -507,6 +507,72 @@ class PlaywrightController:
             logger.error(f"{err_message} Details: {error}")
             return ActionResult(success=False, message=f"{err_message} Error: {str(error)}", error_type=PlaywrightErrorType.ActionFailed)
 
+    async def get_elements_page(self, start_index: int = 0, page_size: int = 20) -> ActionResult:
+        """Get a specific page of interactive elements."""
+        if not self.page:
+            return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable, data=None)
+        
+        from .dom_parser import DomParser
+        dom_parser = DomParser(self.page, self.custom_attribute_readers)
+        result = await dom_parser.get_interactive_elements_with_state(start_index, page_size)
+        
+        if result.success:
+            return ActionResult(success=True, message=result.message, data=result.data)
+        else:
+            return ActionResult(
+                success=False, 
+                message=result.message, 
+                error_type=result.error_type,
+                data=None
+            )
+
+    async def get_next_elements_page(self, current_start_index: int, page_size: int = 20) -> ActionResult:
+        """Get the next page of interactive elements."""
+        next_start_index = current_start_index + page_size
+        return await self.get_elements_page(next_start_index, page_size)
+
+    async def get_previous_elements_page(self, current_start_index: int, page_size: int = 20) -> ActionResult:
+        """Get the previous page of interactive elements."""
+        prev_start_index = max(0, current_start_index - page_size)
+        return await self.get_elements_page(prev_start_index, page_size)
+
+    async def get_first_elements_page(self, page_size: int = 20) -> ActionResult:
+        """Get the first page of interactive elements."""
+        return await self.get_elements_page(0, page_size)
+
+    async def get_structured_data_page(self, start_index: int = 0, page_size: int = 20) -> ActionResult:
+        """Get a specific page of structured data."""
+        if not self.page:
+            return ActionResult(success=False, message="Page not initialized", error_type=PlaywrightErrorType.PageNotAvailable, data=None)
+        
+        from .dom_parser import DomParser
+        dom_parser = DomParser(self.page, self.custom_attribute_readers)
+        result = await dom_parser.get_structured_data(start_index, page_size)
+        
+        if result.success:
+            return ActionResult(success=True, message=result.message, data=result.data)
+        else:
+            return ActionResult(
+                success=False, 
+                message=result.message, 
+                error_type=result.error_type,
+                data=None
+            )
+
+    async def get_next_structured_data_page(self, current_start_index: int, page_size: int = 20) -> ActionResult:
+        """Get the next page of structured data."""
+        next_start_index = current_start_index + page_size
+        return await self.get_structured_data_page(next_start_index, page_size)
+
+    async def get_previous_structured_data_page(self, current_start_index: int, page_size: int = 20) -> ActionResult:
+        """Get the previous page of structured data."""
+        prev_start_index = max(0, current_start_index - page_size)
+        return await self.get_structured_data_page(prev_start_index, page_size)
+
+    async def get_first_structured_data_page(self, page_size: int = 20) -> ActionResult:
+        """Get the first page of structured data."""
+        return await self.get_structured_data_page(0, page_size)
+
     pass
 
 

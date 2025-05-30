@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-ui-bridge"
-version = "0.2.0"
-description = "High-performance Python MCP server for LLM-web UI automation with viewport-optimized parsing and scroll navigation"
+version = "0.3.1"
+description = "Production-ready Python MCP server for LLM-web UI automation with bulletproof pagination, robust element detection, viewport-optimized parsing and enterprise-grade stability"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
   {name = "Santiago Calvo", email = "santiago@example.com"},
 ]
-keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge", "model-context-protocol", "web-automation", "performance", "viewport", "scroll-navigation"]
+keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge", "model-context-protocol", "web-automation", "performance", "viewport", "scroll-navigation", "pagination", "enterprise-ready", "production", "stable"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",

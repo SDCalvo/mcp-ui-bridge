@@ -23,6 +23,13 @@ from .models import (
 )
 
 from pydantic import BaseModel as PydanticBaseModel
+
+class GetCurrentScreenDataParams(PydanticBaseModel):
+    interactive_start_index: int = 0
+    interactive_page_size: int = 20
+    structured_start_index: int = 0
+    structured_page_size: int = 20
+
 class SendCommandParams(PydanticBaseModel):
     command_string: str
 
@@ -135,7 +142,7 @@ async def initialize_browser_and_dependencies(options: McpServerOptions) -> Tupl
     logger.info("[mcp_server.py] MCP UI Bridge components initialized successfully")
     return playwright_controller, dom_parser, automation_interface
 
-async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
+async def _get_current_screen_data_execute_impl(params: GetCurrentScreenDataParams) -> Dict[str, Any]:
     """Core logic for the get_current_screen_data tool."""
     global dom_parser, playwright_controller
 
@@ -159,21 +166,31 @@ async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
                 "error_type": PlaywrightErrorType.PageNotAvailable.value
             }
 
-        # Direct synchronous calls
-        structured_data_result = await dom_parser.get_structured_data()
-        interactive_elements_result = await dom_parser.get_interactive_elements_with_state()
+        # Get structured data with pagination
+        structured_data_result = await dom_parser.get_structured_data(
+            params.structured_start_index, 
+            params.structured_page_size
+        )
+        
+        # Get interactive elements with pagination
+        interactive_elements_result = await dom_parser.get_interactive_elements_with_state(
+            params.interactive_start_index, 
+            params.interactive_page_size
+        )
         
         current_url = await page.evaluate("() => window.location.href")
 
         structured_data_payload = {
-            "containers": [], "regions": [], "statusMessages": [], "loadingIndicators": []
+            "containers": [], "regions": [], "statusMessages": [], "loadingIndicators": [], "pagination": {}
         }
         if structured_data_result.success and structured_data_result.data:
             structured_data_payload = structured_data_result.data
         
         interactive_elements_payload = []
+        interactive_pagination_info = {}
         if interactive_elements_result.success and interactive_elements_result.data:
-            interactive_elements_payload = [el.model_dump() for el in interactive_elements_result.data]
+            interactive_elements_payload = [el.model_dump() for el in interactive_elements_result.data["elements"]]
+            interactive_pagination_info = interactive_elements_result.data["pagination"]
 
         # Get scroll status information for the LLM
         scroll_info = {}
@@ -206,6 +223,10 @@ async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
                 "structuredData": structured_data_payload,
                 "interactiveElements": interactive_elements_payload,
                 "scrollInfo": scroll_info,
+                "pagination": {
+                    "interactive": interactive_pagination_info,
+                    "structured": structured_data_payload.get("pagination", {})
+                }
             },
             "parserMessages": {
                 "structured": structured_data_result.message,
@@ -519,6 +540,102 @@ async def _send_command_tool_execute_impl(params: SendCommandParams, ctx: Contex
     elif command_name == "scroll-down":
         logger.info("[mcp_server.py] Executing core scroll down")
         result = await playwright_controller.scroll_page_down()
+    elif command_name == "next-page":
+        logger.info("[mcp_server.py] Executing next page navigation")
+        current_start_index = int(command_args[0]) if command_args else 0
+        page_result = await playwright_controller.get_next_elements_page(current_start_index)
+        if page_result.success:
+            result = ActionResult(
+                success=True,
+                message=f"Successfully navigated to next page of interactive elements. {page_result.message}",
+                data=page_result.data
+            )
+        else:
+            result = ActionResult(
+                success=False,
+                message=f"Failed to navigate to next page: {page_result.message}",
+                error_type=page_result.error_type
+            )
+    elif command_name == "prev-page":
+        logger.info("[mcp_server.py] Executing previous page navigation")
+        current_start_index = int(command_args[0]) if command_args else 0
+        page_result = await playwright_controller.get_previous_elements_page(current_start_index)
+        if page_result.success:
+            result = ActionResult(
+                success=True,
+                message=f"Successfully navigated to previous page of interactive elements. {page_result.message}",
+                data=page_result.data
+            )
+        else:
+            result = ActionResult(
+                success=False,
+                message=f"Failed to navigate to previous page: {page_result.message}",
+                error_type=page_result.error_type
+            )
+    elif command_name == "first-page":
+        logger.info("[mcp_server.py] Executing first page navigation")
+        page_size = int(command_args[0]) if command_args else 20
+        page_result = await playwright_controller.get_first_elements_page(page_size)
+        if page_result.success:
+            result = ActionResult(
+                success=True,
+                message=f"Successfully navigated to first page of interactive elements. {page_result.message}",
+                data=page_result.data
+            )
+        else:
+            result = ActionResult(
+                success=False,
+                message=f"Failed to navigate to first page: {page_result.message}",
+                error_type=page_result.error_type
+            )
+    elif command_name == "next-structured-page":
+        logger.info("[mcp_server.py] Executing next structured data page navigation")
+        current_start_index = int(command_args[0]) if command_args else 0
+        page_result = await playwright_controller.get_next_structured_data_page(current_start_index)
+        if page_result.success:
+            result = ActionResult(
+                success=True,
+                message=f"Successfully navigated to next page of structured data. {page_result.message}",
+                data=page_result.data
+            )
+        else:
+            result = ActionResult(
+                success=False,
+                message=f"Failed to navigate to next structured data page: {page_result.message}",
+                error_type=page_result.error_type
+            )
+    elif command_name == "prev-structured-page":
+        logger.info("[mcp_server.py] Executing previous structured data page navigation")
+        current_start_index = int(command_args[0]) if command_args else 0
+        page_result = await playwright_controller.get_previous_structured_data_page(current_start_index)
+        if page_result.success:
+            result = ActionResult(
+                success=True,
+                message=f"Successfully navigated to previous page of structured data. {page_result.message}",
+                data=page_result.data
+            )
+        else:
+            result = ActionResult(
+                success=False,
+                message=f"Failed to navigate to previous structured data page: {page_result.message}",
+                error_type=page_result.error_type
+            )
+    elif command_name == "first-structured-page":
+        logger.info("[mcp_server.py] Executing first structured data page navigation")
+        page_size = int(command_args[0]) if command_args else 20
+        page_result = await playwright_controller.get_first_structured_data_page(page_size)
+        if page_result.success:
+            result = ActionResult(
+                success=True,
+                message=f"Successfully navigated to first page of structured data. {page_result.message}",
+                data=page_result.data
+            )
+        else:
+            result = ActionResult(
+                success=False,
+                message=f"Failed to navigate to first structured data page: {page_result.message}",
+                error_type=page_result.error_type
+            )
     elif not custom_action_handler_map.get(command_name): # Only if no custom handler was defined AT ALL
         logger.warning(f"[mcp_server.py] Unrecognized command: {command_name}")
         result = ActionResult(
@@ -586,15 +703,15 @@ async def run_mcp_server(options: McpServerOptions) -> None:
         logger.error("[mcp_server.py] mcp_server_instance is None before tool decoration. This is a bug.")
         return # Cannot proceed to decorate tools
 
-    @mcp_server_instance.tool(name="get_current_screen_data", description="Retrieves structured data and interactive elements from the current web page view.")
-    async def get_current_screen_data_execute() -> Dict[str, Any]:
-        return await _get_current_screen_data_execute_impl()
+    @mcp_server_instance.tool(name="get_current_screen_data", description="Retrieves structured data and interactive elements from the current web page view. Supports pagination parameters: interactive_start_index (default: 0), interactive_page_size (default: 20), structured_start_index (default: 0), structured_page_size (default: 20).")
+    async def get_current_screen_data_execute(params: GetCurrentScreenDataParams) -> Dict[str, Any]:
+        return await _get_current_screen_data_execute_impl(params)
 
-    @mcp_server_instance.tool(name="list_actions", description="Retrieves a list of possible actions (like click, type) for interactive elements on the current screen.")
-    async def list_actions_execute() -> Dict[str, Any]:
+    @mcp_server_instance.tool(name="get_current_screen_actions", description="Retrieves a list of possible actions (like click, type) for interactive elements on the current screen.")
+    async def get_current_screen_actions_execute() -> Dict[str, Any]:
         return await _get_current_screen_actions_execute_impl()
 
-    @mcp_server_instance.tool(name="send_command", description='Sends a command to interact with the web page (e.g., click button, type text, scroll). Command format: "action #elementId arguments...". Supported actions: click, type, select, check, uncheck, choose, scroll-up, scroll-down.')
+    @mcp_server_instance.tool(name="send_command", description='Sends a command to interact with the web page (e.g., click button, type text, scroll, pagination). Command format: "action #elementId arguments..." or "pagination-command [currentStartIndex]". Supported actions: click, type, select, check, uncheck, choose, scroll-up, scroll-down, next-page, prev-page, first-page, next-structured-page, prev-structured-page, first-structured-page.')
     async def send_command_tool_execute(params: SendCommandParams, ctx: Context) -> Dict[str, Any]:
         return await _send_command_tool_execute_impl(params, ctx)
 
