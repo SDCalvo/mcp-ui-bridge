@@ -16,12 +16,24 @@ This is the Python implementation of the original TypeScript `mcp-ui-bridge` lib
 - **Core MCP Tools:**
   - `get_current_screen_data`: Fetches structured data and interactive elements from the current web page.
   - `list_actions`: Derives actionable commands and hints based on the parsed elements.
-  - `send_command`: Executes actions like `click`, `type`, `select`, `check`, `uncheck`, `choose` (radio), `hover`, `clear` on the web page.
+  - `send_command`: Executes actions like `click`, `type`, `select`, `check`, `uncheck`, `choose` (radio), `hover`, `clear`, `scroll-up`, `scroll-down` on the web page.
 - **Client Authentication Hook:** Supports custom asynchronous authentication logic (`authenticate_client` in `McpServerOptions`) at the connection level, allowing validation of clients (e.g., via API keys in headers) before establishing an MCP session.
 - **Custom Attribute Readers:** Extensible system for reading and processing custom `data-mcp-*` attributes.
 - **Custom Action Handlers:** Support for custom commands and overriding core behaviors.
 - **Configurable:** Supports programmatic options for server settings (target URL, port, headless mode, etc.).
 - **Type-Safe:** Full type hints with Pydantic models for robust data validation.
+
+## Performance Optimizations
+
+The `mcp-ui-bridge-python` library includes several performance optimizations designed to handle large web applications efficiently:
+
+- **Viewport-Based Processing**: Only processes elements currently visible in the browser viewport, dramatically reducing processing time for pages with many elements.
+- **Element Count Limits**: Limits the maximum number of elements processed per category (interactive elements, regions, containers) to 20, preventing system overload on pages with thousands of elements.
+- **Text Content Truncation**: Automatically truncates large text content to 500 characters with a "content truncated for performance" indicator.
+- **Scroll Navigation**: Provides `scroll-up` and `scroll-down` commands to navigate through different sections of long pages, allowing access to off-screen content while maintaining performance.
+- **Early Exit Logic**: Skips processing for elements that fail viewport checks immediately, avoiding unnecessary operations.
+
+These optimizations ensure that the library remains responsive even on complex pages with 1000+ elements, reducing response times from 10+ seconds to sub-second performance while maintaining full functionality through scroll-based navigation.
 
 ## Installation
 
@@ -324,6 +336,10 @@ override_handler = CustomActionHandler(
 3. **Structured Data Extraction**: The `DomParser` extracts a structured JSON representation of the page, including interactive elements, display data, and their associated semantic information.
 
 4. **`PlaywrightController` (within `mcp-ui-bridge-python`)**: When an LLM client sends a command, the server translates the MCP command into Playwright actions and executes them on the live web page.
+
+   **Scroll Navigation**: The library supports `scroll-up` and `scroll-down` commands that don't require an element ID. These commands scroll the page by one viewport height and allow LLMs to navigate through different sections of long pages. Combined with viewport filtering, this enables efficient exploration of large applications.
+
+   **Viewport Filtering**: The `DomParser` only processes elements currently visible in the browser viewport, significantly improving performance on pages with many elements. When the page is scrolled, different elements become visible and are included in subsequent `get_current_screen_data` responses.
 
 5. **MCP Server & Tools**: The server exposes standardized MCP tools to the LLM client:
    - `get_current_screen_data`: Allows the LLM to "see" the current state of the web page

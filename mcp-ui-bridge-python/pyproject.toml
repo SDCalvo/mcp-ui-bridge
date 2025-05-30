@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-ui-bridge"
-version = "0.1.1"
-description = "A Python MCP server to bridge LLMs with web UIs via Playwright automation"
+version = "0.2.0"
+description = "High-performance Python MCP server for LLM-web UI automation with viewport-optimized parsing and scroll navigation"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "MIT"
+license = {text = "MIT"}
 authors = [
   {name = "Santiago Calvo", email = "santiago@example.com"},
 ]
-keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge", "model-context-protocol", "web-automation"]
+keywords = ["mcp", "llm", "automation", "playwright", "ui-bridge", "model-context-protocol", "web-automation", "performance", "viewport", "scroll-navigation"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

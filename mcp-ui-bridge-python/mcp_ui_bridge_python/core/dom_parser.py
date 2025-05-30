@@ -99,7 +99,7 @@ class DomParser:
         if not bounding_box:
             return False
 
-        viewport = await self.page.viewport_size()
+        viewport = self.page.viewport_size
         if not viewport:
             return False
 
@@ -116,9 +116,23 @@ class DomParser:
             return False
 
         body_scroll_height = await body_handle.evaluate("body => body.scrollHeight")
-        viewport_height = (await self.page.viewport_size())['height']
+        viewport = self.page.viewport_size
+        viewport_height = viewport['height'] if viewport else 0
 
         return body_scroll_height > viewport_height
+
+    async def _is_at_bottom(self) -> bool:
+        """Check if the page is scrolled to the bottom."""
+        body_handle = await self.page.query_selector('body')
+        if not body_handle:
+            return True
+
+        body_scroll_height = await body_handle.evaluate("body => body.scrollHeight")
+        viewport = self.page.viewport_size
+        viewport_height = viewport['height'] if viewport else 0
+        scroll_y = await self.page.evaluate("() => window.scrollY")
+
+        return scroll_y + viewport_height >= body_scroll_height
 
     async def scroll_down(self) -> None:
         await self.page.evaluate("window.scrollBy(0, window.innerHeight)")
@@ -145,7 +159,10 @@ class DomParser:
 
             found_elements: List[InteractiveElementInfo] = []
 
-            for i in range(count):
+            # Limit processing to maximum 20 elements for performance
+            max_elements = min(count, 20)
+
+            for i in range(max_elements):
                 element_locator_instance = elements_locator.nth(i)
 
                 # Check if the element is in the viewport
@@ -277,8 +294,12 @@ class DomParser:
 
             # Check if scrolling is possible
             scrollable = await self._is_scrollable()
-            if scrollable:
+            at_bottom = await self._is_at_bottom()
+            
+            if scrollable and not at_bottom:
                 logger.info("More elements are available beyond the current viewport. Scrolling is possible.")
+            elif scrollable and at_bottom:
+                logger.info("Reached the bottom of the page. No more scrolling possible.")
 
             success_message = f"Successfully parsed {len(found_elements)} interactive elements with state (async)."
             return ParserResult(success=True, message=success_message, data=found_elements)
@@ -337,8 +358,16 @@ class DomParser:
             container_locator: Locator = self.page.locator(f'[{DataAttributes.DISPLAY_CONTAINER}]')
             container_count = await container_locator.count()
 
-            for i in range(container_count):
+            # Limit processing to maximum 20 containers for performance
+            max_containers = min(container_count, 20)
+
+            for i in range(max_containers):
                 container_element_locator = container_locator.nth(i)
+
+                # Check if the container is in the viewport
+                element_handle = await container_element_locator.element_handle()
+                if not element_handle or not await self._is_element_in_viewport(element_handle):
+                    continue
 
                 container_id_attr = await self._get_element_attribute(container_element_locator, DataAttributes.DISPLAY_CONTAINER)
                 if not container_id_attr: 
@@ -358,6 +387,10 @@ class DomParser:
                     item_id = await self._get_element_attribute(item_element_locator, DataAttributes.DISPLAY_ITEM_ID)
                     text_content_result = await item_element_locator.text_content()
                     text_content = text_content_result.strip() if text_content_result else ""
+
+                    # Truncate large text content for performance
+                    if len(text_content) > 500:
+                        text_content = text_content[:500] + "... [content truncated for performance]"
 
                     fields: Dict[str, str] = {}
                     field_locator: Locator = item_element_locator.locator(f'[{DataAttributes.FIELD_NAME}]')
@@ -398,8 +431,16 @@ class DomParser:
             region_locator: Locator = self.page.locator(f'[{DataAttributes.REGION}]')
             count = await region_locator.count()
 
-            for i in range(count):
+            # Limit processing to maximum 20 regions for performance
+            max_regions = min(count, 20)
+
+            for i in range(max_regions):
                 element_locator_instance = region_locator.nth(i)
+
+                # Check if the region is in the viewport
+                element_handle = await element_locator_instance.element_handle()
+                if not element_handle or not await self._is_element_in_viewport(element_handle):
+                    continue
 
                 region_id_attr = await self._get_element_attribute(element_locator_instance, DataAttributes.REGION)
                 if not region_id_attr:
@@ -410,6 +451,10 @@ class DomParser:
                 element_type = await self._get_element_type(element_locator_instance) 
                 label = await self._get_element_label(element_locator_instance, region_id, element_type)
                 purpose = await self._get_element_attribute(element_locator_instance, DataAttributes.PURPOSE)
+
+                # Truncate large label content for performance
+                if label and len(label) > 500:
+                    label = label[:500] + "... [content truncated for performance]"
 
                 found_regions.append(PageRegionInfo(region_id=region_id, label=label, purpose=purpose))
             

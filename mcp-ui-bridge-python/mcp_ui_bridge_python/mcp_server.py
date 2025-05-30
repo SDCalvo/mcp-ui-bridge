@@ -175,12 +175,37 @@ async def _get_current_screen_data_execute_impl() -> Dict[str, Any]:
         if interactive_elements_result.success and interactive_elements_result.data:
             interactive_elements_payload = [el.model_dump() for el in interactive_elements_result.data]
 
+        # Get scroll status information for the LLM
+        scroll_info = {}
+        try:
+            scrollable = await dom_parser._is_scrollable()
+            at_bottom = await dom_parser._is_at_bottom()
+            scroll_info = {
+                "canScroll": scrollable,
+                "atBottom": at_bottom,
+                "scrollCommandsAvailable": ["scroll-up", "scroll-down"] if scrollable else [],
+                "scrollMessage": (
+                    "More elements available beyond viewport. Use scroll-down to see more." if scrollable and not at_bottom
+                    else "At bottom of page. Use scroll-up to go back." if scrollable and at_bottom
+                    else "Page content fits in viewport. No scrolling needed."
+                )
+            }
+        except Exception as e:
+            logger.warning(f"[mcp_server.py] Error getting scroll status: {e}")
+            scroll_info = {
+                "canScroll": False,
+                "atBottom": True,
+                "scrollCommandsAvailable": [],
+                "scrollMessage": "Scroll status unavailable."
+            }
+
         return {
             "success": True,
             "currentUrl": current_url,
             "data": {
                 "structuredData": structured_data_payload,
                 "interactiveElements": interactive_elements_payload,
+                "scrollInfo": scroll_info,
             },
             "parserMessages": {
                 "structured": structured_data_result.message,
@@ -332,6 +357,33 @@ async def _get_current_screen_actions_execute_impl() -> Dict[str, Any]:
                     "isReadOnly": el.get("isReadOnly"),
                 })
             actions.extend(generated_actions)
+        
+        # Add scroll actions if scrolling is available
+        try:
+            scrollable = await dom_parser._is_scrollable()
+            at_bottom = await dom_parser._is_at_bottom()
+            
+            if scrollable and not at_bottom:
+                actions.append({
+                    "id": "scroll-down",
+                    "label": "Scroll Down",
+                    "elementType": "scroll-action",
+                    "purpose": "Scroll down to see more elements below the current viewport",
+                    "commandHint": "scroll-down",
+                    "scrollInfo": "More content available below"
+                })
+            
+            if scrollable and at_bottom:
+                actions.append({
+                    "id": "scroll-up", 
+                    "label": "Scroll Up",
+                    "elementType": "scroll-action",
+                    "purpose": "Scroll up to see previous elements above the current viewport",
+                    "commandHint": "scroll-up",
+                    "scrollInfo": "At bottom of page, can scroll up"
+                })
+        except Exception as e:
+            logger.warning(f"[mcp_server.py] Error getting scroll actions: {e}")
         
         return {"success": True, "actions": actions}
 

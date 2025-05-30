@@ -3,22 +3,22 @@ import os
 
 # --- Force Python to use the local development version of mcp-ui-bridge-python ---
 # Uncomment the following block to use local development version instead of installed package
-# # Construct the absolute path to your local mcp-ui-bridge-python directory
-# local_lib_path = os.path.abspath(os.path.join(
-#     os.path.dirname(__file__),  # Current file's directory (src)
-#     '..',                       # Up to mcp-external-server-python
-#     '..',                       # Up to "React to terminal conversor"
-#     'mcp-ui-bridge-python'      # Down to the library
-# ))
-# 
-# # Check if this path exists and add it to sys.path
-# if os.path.isdir(local_lib_path):
-#     # Remove any existing paths that might point to a site-packages version of the library
-#     sys.path = [p for p in sys.path if 'mcp_ui_bridge_python' not in p.replace('\\', '/').lower()]
-#     
-#     # Add our local library path to the beginning of sys.path
-#     if local_lib_path not in sys.path:
-#         sys.path.insert(0, local_lib_path)
+# Construct the absolute path to your local mcp-ui-bridge-python directory
+local_lib_path = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),  # Current file's directory (src)
+    '..',                       # Up to mcp-external-server-python
+    '..',                       # Up to "React to terminal conversor"
+    'mcp-ui-bridge-python'      # Down to the library
+))
+
+# Check if this path exists and add it to sys.path
+if os.path.isdir(local_lib_path):
+    # Remove any existing paths that might point to a site-packages version of the library
+    sys.path = [p for p in sys.path if 'mcp_ui_bridge_python' not in p.replace('\\', '/').lower()]
+    
+    # Add our local library path to the beginning of sys.path
+    if local_lib_path not in sys.path:
+        sys.path.insert(0, local_lib_path)
 
 import asyncio
 import logging
